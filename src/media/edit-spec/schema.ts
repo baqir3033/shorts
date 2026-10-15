@@ -150,6 +150,25 @@ export const EditSpecSchema = z
         enabled: z.boolean(),
         removeSilencesAboveMs: z.number().min(100).max(5000),
         transitionMs: z.number().min(0).max(500),
+        targetLengthMs: z.number().min(1000).max(600_000).optional(),
+        silenceRanges: z
+          .array(
+            z.object({
+              startMs: z.number().min(0),
+              endMs: z.number().positive(),
+            }),
+          )
+          .max(200)
+          .optional(),
+        keepRanges: z
+          .array(
+            z.object({
+              startMs: z.number().min(0),
+              endMs: z.number().positive(),
+            }),
+          )
+          .max(24)
+          .optional(),
       })
       .optional(),
     transitions: z

@@ -66,6 +66,15 @@ export function normalizeEffects(spec: EditSpec): EditSpec {
       enabled: !!jumpCuts.enabled,
       removeSilencesAboveMs: clamp(jumpCuts.removeSilencesAboveMs, 100, 5000),
       transitionMs: clamp(jumpCuts.transitionMs, 0, 500),
+      targetLengthMs: jumpCuts.targetLengthMs
+        ? clamp(jumpCuts.targetLengthMs, 1000, 600_000)
+        : undefined,
+      silenceRanges: jumpCuts.silenceRanges
+        ?.filter((s) => s.endMs > s.startMs)
+        .slice(0, 200),
+      keepRanges: jumpCuts.keepRanges
+        ?.filter((s) => s.endMs > s.startMs)
+        .slice(0, 24),
     };
   }
 

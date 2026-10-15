@@ -113,6 +113,12 @@ export type EditSpec = {
     enabled: boolean;
     removeSilencesAboveMs: number;
     transitionMs: number;
+    /** Desired output length after silence removal (locked short length). */
+    targetLengthMs?: number;
+    /** Absolute source silence ranges from audio detect / refill apply. */
+    silenceRanges?: { startMs: number; endMs: number }[];
+    /** Speech islands to concat after apply (absolute source ms). */
+    keepRanges?: { startMs: number; endMs: number }[];
   };
   transitions?: TransitionSpec[];
   output: {

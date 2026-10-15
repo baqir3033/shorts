@@ -1,62 +1,143 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { AnalysisResult, EditSpec, TextOverlay } from "@/media/edit-spec/types";
 import {
   LOOK_PRESET_IDS,
   lookFromPreset,
   type LookPresetId,
 } from "@/media/edit-spec/lookPresets";
-import { planJumpCuts } from "@/media/edit-spec/jumpCutPlan";
+import { planSilenceRefill } from "@/media/edit-spec/jumpCutPlan";
 import { normalizeEffects } from "@/media/edit-spec/normalizeEffects";
+import { detectSilenceInFile } from "@/media/analysis/detectSilence";
+import { clampWindow } from "@/media/edit-spec/window";
 
 type Props = {
   spec: EditSpec;
   analysis: AnalysisResult | null;
+  sourceFile: File | null;
+  durationMs: number;
+  /** Locked short length (30s / 40s / …) — refill target after silence cut. */
+  targetLengthMs: number;
   onChange: (next: EditSpec) => void;
   selectedOverlayId: string | null;
   onSelectOverlay: (id: string | null) => void;
+  onSilenceBusyChange?: (busy: boolean) => void;
+  emphasizeDetectSilence?: boolean;
 };
 
 const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function EffectsPanel({
   spec,
-  analysis,
+  analysis: _analysis,
+  sourceFile,
+  durationMs,
+  targetLengthMs,
   onChange,
   selectedOverlayId,
   onSelectOverlay,
+  onSilenceBusyChange,
+  emphasizeDetectSilence,
 }: Props) {
   const [showAdvancedLook, setShowAdvancedLook] = useState(false);
   const [showSpeedSegments, setShowSpeedSegments] = useState(false);
+  const [silenceBusy, setSilenceBusy] = useState(false);
+  const [silenceMsg, setSilenceMsg] = useState<string | null>(null);
 
   const look = spec.look ?? lookFromPreset("none");
   const rate = spec.source.playbackRate ?? 1;
-
-  const jumpPreview = useMemo(() => {
-    const jc = spec.jumpCuts ?? {
-      enabled: false,
-      removeSilencesAboveMs: 400,
-      transitionMs: 120,
-    };
-    const words =
-      analysis?.transcript?.words ??
-      analysis?.transcript?.segments?.map((s) => ({
-        startMs: s.startMs,
-        endMs: s.endMs,
-      })) ??
-      [];
-    return planJumpCuts({
-      windowStartMs: spec.source.startMs,
-      windowEndMs: spec.source.endMs,
-      removeSilencesAboveMs: jc.removeSilencesAboveMs,
-      silenceRanges: analysis?.silenceRanges,
-      transcriptItems: words,
-    });
-  }, [spec, analysis]);
+  const targetL = Math.max(
+    1000,
+    spec.jumpCuts?.targetLengthMs ?? targetLengthMs,
+  );
 
   const patch = (updater: (s: EditSpec) => EditSpec) => {
     onChange(normalizeEffects(updater(spec)));
+  };
+
+  const applyRemoveSilences = async () => {
+    if (!sourceFile) {
+      setSilenceMsg("Source video not loaded yet.");
+      return;
+    }
+    setSilenceBusy(true);
+    onSilenceBusyChange?.(true);
+    setSilenceMsg("Detecting silence in audio…");
+    try {
+      const minSilence = spec.jumpCuts?.removeSilencesAboveMs ?? 400;
+      const silences = await detectSilenceInFile(sourceFile, {
+        minSilenceMs: minSilence,
+      });
+      const refill = planSilenceRefill({
+        anchorStartMs: spec.source.startMs,
+        targetLengthMs: targetL,
+        durationMs,
+        silenceRanges: silences,
+        removeSilencesAboveMs: minSilence,
+      });
+
+      if (refill.keptMs < 500) {
+        setSilenceMsg(
+          "Almost no speech-level audio found. Try a lower silence threshold.",
+        );
+        return;
+      }
+
+      patch((s) => ({
+        ...s,
+        source: {
+          ...s.source,
+          startMs: refill.harvestStartMs,
+          endMs: refill.harvestEndMs,
+        },
+        jumpCuts: {
+          enabled: true,
+          removeSilencesAboveMs: minSilence,
+          transitionMs: s.jumpCuts?.transitionMs ?? 120,
+          targetLengthMs: targetL,
+          silenceRanges: silences,
+          keepRanges: refill.keep,
+        },
+      }));
+
+      const keptSec = (refill.keptMs / 1000).toFixed(1);
+      const targetSec = (targetL / 1000).toFixed(0);
+      const removedSec = (refill.removedSilenceMs / 1000).toFixed(1);
+      setSilenceMsg(
+        refill.metTarget
+          ? `Removed ~${removedSec}s silence, refilled to ${keptSec}s of content (target ${targetSec}s).`
+          : `Removed silence and packed ${keptSec}s (source ran out before ${targetSec}s).`,
+      );
+    } catch (err) {
+      setSilenceMsg(
+        err instanceof Error ? err.message : "Silence detection failed",
+      );
+    } finally {
+      setSilenceBusy(false);
+      onSilenceBusyChange?.(false);
+    }
+  };
+
+  const clearJumpCuts = () => {
+    const win = clampWindow(spec.source.startMs, targetL, durationMs);
+    patch((s) => ({
+      ...s,
+      source: {
+        ...s.source,
+        startMs: win.startMs,
+        endMs: win.endMs,
+      },
+      jumpCuts: {
+        enabled: false,
+        removeSilencesAboveMs: s.jumpCuts?.removeSilencesAboveMs ?? 400,
+        transitionMs: s.jumpCuts?.transitionMs ?? 120,
+        targetLengthMs: targetL,
+        silenceRanges: undefined,
+        keepRanges: undefined,
+      },
+    }));
+    setSilenceMsg(null);
   };
 
   return (
@@ -509,40 +590,16 @@ export function EffectsPanel({
         </label>
       </section>
 
-      {/* Jump cuts */}
+      {/* Jump cuts — detect silence, cut, refill to target length */}
       <section className="space-y-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">
-          Jump cuts
-        </h3>
-        <label className="flex items-center gap-2 text-xs text-zinc-300">
-          <input
-            type="checkbox"
-            checked={!!spec.jumpCuts?.enabled}
-            disabled={!jumpPreview.hasSilenceData}
-            onChange={(e) =>
-              patch((s) => ({
-                ...s,
-                jumpCuts: {
-                  enabled: e.target.checked,
-                  removeSilencesAboveMs:
-                    s.jumpCuts?.removeSilencesAboveMs ?? 400,
-                  transitionMs: s.jumpCuts?.transitionMs ?? 120,
-                },
-              }))
-            }
-          />
           Remove long silences
-        </label>
-        {!jumpPreview.hasSilenceData ? (
-          <p className="text-[11px] text-amber-200/80">
-            Run Suggest once (or analysis with speech) so silence gaps are known.
-          </p>
-        ) : (
-          <p className="text-[11px] text-zinc-500">
-            Would remove ~{jumpPreview.removedGapCount}s of gaps (
-            {jumpPreview.keep.length} keep segments).
-          </p>
-        )}
+        </h3>
+        <p className="text-[11px] text-zinc-500">
+          Detects quiet gaps in the audio, cuts them out, then pulls more of the
+          full video so the short stays ~{(targetL / 1000).toFixed(0)}s of
+          content.
+        </p>
         <label className="block text-[11px] text-zinc-400">
           Silence longer than{" "}
           {((spec.jumpCuts?.removeSilencesAboveMs ?? 400) / 1000).toFixed(1)}s
@@ -560,19 +617,22 @@ export function EffectsPanel({
                   enabled: s.jumpCuts?.enabled ?? false,
                   removeSilencesAboveMs: Number(e.target.value),
                   transitionMs: s.jumpCuts?.transitionMs ?? 120,
+                  targetLengthMs: targetL,
+                  silenceRanges: s.jumpCuts?.silenceRanges,
+                  keepRanges: s.jumpCuts?.keepRanges,
                 },
               }))
             }
           />
         </label>
         <label className="block text-[11px] text-zinc-400">
-          Transition
+          Transition between kept pieces
           <select
             className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
             value={
               (spec.transitions?.[0]?.type === "fade_black"
                 ? "fade_black"
-                : spec.jumpCuts?.transitionMs
+                : (spec.jumpCuts?.transitionMs ?? 0) > 0
                   ? "dissolve"
                   : "none") as string
             }
@@ -584,7 +644,11 @@ export function EffectsPanel({
                   enabled: s.jumpCuts?.enabled ?? false,
                   removeSilencesAboveMs:
                     s.jumpCuts?.removeSilencesAboveMs ?? 400,
-                  transitionMs: type === "none" ? 0 : s.jumpCuts?.transitionMs || 120,
+                  transitionMs:
+                    type === "none" ? 0 : s.jumpCuts?.transitionMs || 120,
+                  targetLengthMs: targetL,
+                  silenceRanges: s.jumpCuts?.silenceRanges,
+                  keepRanges: s.jumpCuts?.keepRanges,
                 },
                 transitions:
                   type === "none"
@@ -604,6 +668,49 @@ export function EffectsPanel({
             <option value="fade_black">Fade black</option>
           </select>
         </label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-coach-target="effectsDetectSilence"
+            disabled={silenceBusy || !sourceFile}
+            className={`rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-zinc-950 disabled:opacity-40 ${
+              emphasizeDetectSilence
+                ? "animate-pulse ring-2 ring-amber-300 ring-offset-2 ring-offset-zinc-950"
+                : ""
+            }`}
+            onClick={() => void applyRemoveSilences()}
+          >
+            {silenceBusy
+              ? "Detecting…"
+              : spec.jumpCuts?.enabled
+                ? "Re-apply silence cut"
+                : "Detect & remove silences"}
+          </button>
+          {spec.jumpCuts?.enabled ? (
+            <button
+              type="button"
+              className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200"
+              onClick={clearJumpCuts}
+            >
+              Clear (restore {Math.round(targetL / 1000)}s window)
+            </button>
+          ) : null}
+        </div>
+        {silenceMsg ? (
+          <p className="text-[11px] text-amber-100/90">{silenceMsg}</p>
+        ) : null}
+        {spec.jumpCuts?.enabled && spec.jumpCuts.keepRanges?.length ? (
+          <p className="text-[11px] text-zinc-500">
+            Active: {spec.jumpCuts.keepRanges.length} speech pieces → ~
+            {(
+              spec.jumpCuts.keepRanges.reduce(
+                (n, k) => n + (k.endMs - k.startMs),
+                0,
+              ) / 1000
+            ).toFixed(1)}
+            s output (target {(targetL / 1000).toFixed(0)}s).
+          </p>
+        ) : null}
       </section>
 
       {/* Text overlays */}

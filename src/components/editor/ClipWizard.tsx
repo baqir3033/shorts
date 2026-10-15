@@ -5,7 +5,6 @@ import { resolveLengthMs } from "@/media/edit-spec/window";
 
 export type LengthSetupValue = {
   lengthMs: number;
-  count: number;
   mode: "manual" | "ai" | null;
 };
 
@@ -16,7 +15,9 @@ type Props = {
   suggestError: string | null;
   value: LengthSetupValue;
   onChange: (next: LengthSetupValue) => void;
-  onSuggest: (opts: { lengthMs: number; count: number }) => Promise<void>;
+  onSuggest: (opts: { lengthMs: number }) => Promise<void>;
+  /** Soft-highlight mode buttons when coach asks to pick a mode */
+  emphasizeMode?: boolean;
 };
 
 const LENGTH_PRESETS = [
@@ -34,6 +35,7 @@ export function ClipWizard({
   value,
   onChange,
   onSuggest,
+  emphasizeMode,
 }: Props) {
   const presetMatch = LENGTH_PRESETS.some(
     (p) => resolveLengthMs(p.ms, durationMs) === value.lengthMs,
@@ -52,8 +54,8 @@ export function ClipWizard({
           Choose short length
         </h2>
         <p className="mt-1 text-sm text-zinc-400">
-          Pick how long each short is. Next you&apos;ll slide a fixed window
-          along the full video — length won&apos;t change.
+          One short per pass. Pick the length, then Place manually or Suggest
+          shorts.
         </p>
       </div>
 
@@ -129,55 +131,42 @@ export function ClipWizard({
       </section>
 
       <section>
-        <h3 className="text-sm font-medium text-zinc-200">
-          How many shorts? ({value.count})
-        </h3>
-        <p className="mt-1 text-xs text-zinc-500">
-          Used when you ask AI to suggest moments.
-        </p>
-        <input
-          type="range"
-          min={1}
-          max={8}
-          value={value.count}
-          className="mt-2 w-full"
-          onChange={(e) =>
-            onChange({ ...value, count: Number(e.target.value) })
-          }
-        />
-      </section>
-
-      <section className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
-            value.mode === "manual"
-              ? "bg-amber-400 text-zinc-950"
-              : "bg-zinc-100 text-zinc-950"
-          }`}
-          onClick={() => onChange({ ...value, mode: "manual" })}
-        >
-          Place manually
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
-            value.mode === "ai"
-              ? "bg-amber-400 text-zinc-950"
-              : "border border-amber-400/60 bg-amber-400/15 text-amber-50"
-          }`}
-          onClick={async () => {
-            onChange({ ...value, mode: "ai" });
-            await onSuggest({
-              lengthMs: resolvedLength,
-              count: value.count,
-            });
-          }}
-        >
-          {busy ? "Finding moments…" : "Suggest shorts"}
-        </button>
+        <h3 className="text-sm font-medium text-zinc-200">How to place it</h3>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-coach-target="placeManual"
+            disabled={busy}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
+              value.mode === "manual"
+                ? "bg-amber-400 text-zinc-950"
+                : emphasizeMode
+                  ? "border-2 border-amber-400 bg-amber-400/15 text-amber-50 ring-2 ring-amber-300/40"
+                  : "bg-zinc-100 text-zinc-950"
+            }`}
+            onClick={() => onChange({ ...value, mode: "manual" })}
+          >
+            Place manually
+          </button>
+          <button
+            type="button"
+            data-coach-target="suggest"
+            disabled={busy}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
+              value.mode === "ai"
+                ? "bg-amber-400 text-zinc-950"
+                : emphasizeMode
+                  ? "border-2 border-amber-400 bg-amber-400/15 text-amber-50 ring-2 ring-amber-300/40"
+                  : "border border-amber-400/60 bg-amber-400/15 text-amber-50"
+            }`}
+            onClick={async () => {
+              onChange({ ...value, mode: "ai" });
+              await onSuggest({ lengthMs: resolvedLength });
+            }}
+          >
+            {busy ? "Finding moments…" : "Suggest shorts"}
+          </button>
+        </div>
       </section>
 
       {busy && phaseMsg ? (
@@ -190,15 +179,23 @@ export function ClipWizard({
       ) : null}
 
       {value.mode === "manual" ? (
-        <p className="text-sm text-zinc-400">
-          Next: drag the {Math.round(resolvedLength / 1000)}s box on the full
-          timeline to pick your chunk.
+        <p className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+          <span className="mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 text-xs font-bold text-zinc-950">
+            1
+          </span>
+          Press{" "}
+          <span className="font-semibold">Continue to place clip</span> above —
+          then drag the {Math.round(resolvedLength / 1000)}s box.
         </p>
       ) : null}
-      {value.mode === "ai" && !busy ? (
-        <p className="text-sm text-zinc-400">
-          Next: pick a suggested moment, then fine-tune by sliding the locked
-          box.
+      {value.mode === "ai" && !busy && !suggestError ? (
+        <p className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+          <span className="mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 text-xs font-bold text-zinc-950">
+            1
+          </span>
+          Press{" "}
+          <span className="font-semibold">Continue to place clip</span> above to
+          pick one moment (single short).
         </p>
       ) : null}
     </div>

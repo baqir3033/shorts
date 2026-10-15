@@ -1,49 +1,29 @@
 "use client";
 
-export type CoachStep = "length" | "place" | "polish" | "render";
+import { useEffect, useRef } from "react";
+import { CoachCue, COACH_PULSE_CLASS } from "./coach/CoachCue";
+import type { CoachStep, NextAction } from "./coach/nextAction";
 
-const STEPS: {
-  id: CoachStep;
-  title: string;
-  coach: (ctx: { lengthLabel: string }) => string;
-}[] = [
-  {
-    id: "length",
-    title: "Length",
-    coach: () => "Choose how long each short is.",
-  },
-  {
-    id: "place",
-    title: "Place clip",
-    coach: ({ lengthLabel }) =>
-      `Drag the highlighted box to the ${lengthLabel} you want. Length stays fixed.`,
-  },
-  {
-    id: "polish",
-    title: "Polish",
-    coach: () =>
-      "Effects (look, speed, fades), captions, reaction PiP, and crop — optional but recommended.",
-  },
-  {
-    id: "render",
-    title: "Render",
-    coach: () => "Export when the preview looks right.",
-  },
+const STEPS: { id: CoachStep; title: string }[] = [
+  { id: "length", title: "Length" },
+  { id: "place", title: "Place clip" },
+  { id: "polish", title: "Polish" },
+  { id: "render", title: "Render" },
 ];
 
 const ORDER: CoachStep[] = ["length", "place", "polish", "render"];
 
 type Props = {
   current: CoachStep;
-  lengthLabel: string;
-  /** Highest step the user may open (inclusive index in ORDER). */
   maxReachable: CoachStep;
   onSelect: (step: CoachStep) => void;
+  nextAction: NextAction;
   continueDisabled?: boolean;
   continueReason?: string | null;
   continueLabel?: string;
   onContinue?: () => void;
   hideContinue?: boolean;
+  onDismissCue?: () => void;
 };
 
 function stepIndex(s: CoachStep): number {
@@ -52,17 +32,30 @@ function stepIndex(s: CoachStep): number {
 
 export function EditorStepRail({
   current,
-  lengthLabel,
   maxReachable,
   onSelect,
+  nextAction,
   continueDisabled,
   continueReason,
   continueLabel = "Continue",
   onContinue,
   hideContinue,
+  onDismissCue,
 }: Props) {
-  const currentMeta = STEPS.find((s) => s.id === current)!;
   const maxIdx = stepIndex(maxReachable);
+  const continueRef = useRef<HTMLButtonElement | null>(null);
+  const pulseContinue =
+    nextAction.target === "continue" &&
+    nextAction.emphasize &&
+    !continueDisabled;
+
+  useEffect(() => {
+    if (!pulseContinue) return;
+    continueRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [pulseContinue, nextAction.id]);
 
   return (
     <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950/90 p-4">
@@ -95,23 +88,40 @@ export function EditorStepRail({
         })}
       </ol>
 
-      <p className="text-sm text-zinc-300">
-        <span className="font-medium text-zinc-100">
-          {currentMeta.title}:{" "}
-        </span>
-        {currentMeta.coach({ lengthLabel })}
-      </p>
+      <CoachCue
+        title={nextAction.title || STEPS.find((s) => s.id === current)!.title}
+        body={nextAction.body}
+        emphasize={nextAction.emphasize && nextAction.target !== "none"}
+        onDismiss={
+          nextAction.emphasize && nextAction.target !== "none"
+            ? onDismissCue
+            : undefined
+        }
+      />
 
       {!hideContinue && onContinue ? (
         <div className="flex flex-wrap items-center gap-3">
           <button
+            ref={continueRef}
             type="button"
+            data-coach-target="continue"
             disabled={!!continueDisabled}
             onClick={onContinue}
-            className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-40"
+            aria-describedby="coach-continue-desc"
+            className={`rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-40 ${
+              pulseContinue ? COACH_PULSE_CLASS : ""
+            }`}
           >
+            {pulseContinue ? (
+              <span className="mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-950 text-[11px] font-bold text-amber-300">
+                1
+              </span>
+            ) : null}
             {continueLabel}
           </button>
+          <span id="coach-continue-desc" className="sr-only">
+            {nextAction.body}
+          </span>
           {continueDisabled && continueReason ? (
             <span className="text-xs text-zinc-500">{continueReason}</span>
           ) : null}
@@ -122,3 +132,4 @@ export function EditorStepRail({
 }
 
 export { ORDER as COACH_STEP_ORDER };
+export type { CoachStep };

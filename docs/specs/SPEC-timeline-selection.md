@@ -8,12 +8,12 @@ Manual (and AI-refined) clip placement uses a **locked-duration** window on the 
 
 | ID | Rule |
 |----|------|
-| R1 | After length `L` is chosen, `endMs - startMs === L` always. If source is shorter than `L`, clamp `L = durationMs` and the window is the full file. |
+| R1 | After length `L` is chosen, `endMs - startMs === L` while placing/sliding. If source is shorter than `L`, clamp `L = durationMs`. **Exception:** after silence-refill (J*), harvest window may be `> L` while output content targets `L`. |
 | R2 | Dragging the selection moves `startMs` only; `endMs = startMs + L`. No edge handles. Clicking the track jumps/recenters the window so the click falls inside it when possible. |
 | R3 | `startMs` stays in `[0, durationMs - L]`. |
 | R4 | Playhead can scrub the full source; “preview this short” loops only inside the window. Moving the window seeks preview to the new `startMs`. |
 | R5 | Changing the length preset resets or reclamps the window; edges stay locked. |
-| R6 | AI Suggest returns candidates of length `L`; picking a card snaps the same locked box to that `startMs`. Manual slide still works after AI. |
+| R6 | AI Suggest returns up to 5 candidates of length `L`; picking a card snaps the locked box (one active short — no batch queue). Manual slide still works after AI. |
 | R7 | Window moves go through existing EditSpec history (undo/redo). |
 | R8 | Step coach: user cannot reach Render until length + window are confirmed; coach copy is mandatory, not decorative. |
 

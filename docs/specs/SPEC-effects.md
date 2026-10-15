@@ -39,12 +39,13 @@ Multi-layer NLE, freeform multi-clip timeline, library BGM.
 - A2 Reaction bus stays in reaction panel.
 - A3 loudnorm/afftdn after volume.
 
-### Jump cuts (J*)
-- J1 `{ enabled, removeSilencesAboveMs 100..5000, transitionMs 0..500 }`.
-- J2 Silence from analysis.silenceRanges or transcript gaps.
-- J3 No silence data → disable Apply with coach copy.
-- J4 Internal segment list; locked window is outer range.
-- J5 Max 24 keep segments.
+### Jump cuts / silence refill (J*)
+- J1 Manual **Detect & remove silences** runs on-device audio energy detection (no Suggest required).
+- J2 Cut quiet gaps longer than `removeSilencesAboveMs` (100..5000) from the selected short.
+- J3 **Refill:** after cuts, kept speech is shorter than target `L` (30s/40s/…). Pull more source forward from the selection start (then backward if needed) until kept speech ≈ `L` or the file ends.
+- J4 Harvest window (`source.startMs`/`endMs`) may grow longer than `L`; output duration after concat ≈ `L`. Store `targetLengthMs`, `silenceRanges`, and `keepRanges` on `jumpCuts`.
+- J5 Sliding the locked timeline again clears refill and restores a pure `L`-length window.
+- J6 Max 24 keep segments; transitions only between keep pieces.
 
 ### Transitions (X*)
 - X1 Between jump-cut segments only.

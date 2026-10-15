@@ -74,24 +74,29 @@ export function buildFilterGraph(
     .join(",");
 
   const jumpEnabled = !!spec.jumpCuts?.enabled;
-  const jumpPlan = jumpEnabled
-    ? planJumpCuts({
-        windowStartMs: winStart,
-        windowEndMs: winEnd,
-        removeSilencesAboveMs: spec.jumpCuts!.removeSilencesAboveMs,
-        silenceRanges: opts?.silenceRanges,
-        transcriptItems: opts?.transcriptItems,
-      })
-    : null;
+  const storedKeep = spec.jumpCuts?.keepRanges?.filter(
+    (k) => k.endMs > k.startMs,
+  );
+  const silenceForJump =
+    spec.jumpCuts?.silenceRanges ?? opts?.silenceRanges ?? [];
 
-  if (jumpEnabled && jumpPlan && !jumpPlan.hasSilenceData) {
-    degradations.push("jumpcut_no_silence");
+  let keepRanges: TimeRange[] = [{ startMs: winStart, endMs: winEnd }];
+  if (jumpEnabled && storedKeep?.length) {
+    keepRanges = storedKeep;
+  } else if (jumpEnabled) {
+    const jumpPlan = planJumpCuts({
+      windowStartMs: winStart,
+      windowEndMs: winEnd,
+      removeSilencesAboveMs: spec.jumpCuts!.removeSilencesAboveMs,
+      silenceRanges: silenceForJump,
+      transcriptItems: opts?.transcriptItems,
+    });
+    if (!jumpPlan.hasSpeechTimeline) {
+      degradations.push("jumpcut_no_silence");
+    } else if (jumpPlan.foundGaps) {
+      keepRanges = jumpPlan.keep;
+    }
   }
-
-  const keepRanges: TimeRange[] =
-    jumpEnabled && jumpPlan?.hasSilenceData
-      ? jumpPlan.keep
-      : [{ startMs: winStart, endMs: winEnd }];
 
   const globalRate = spec.source.playbackRate ?? 1;
   // When jump-cutting, apply global rate only (segments ignored for encode simplicity)

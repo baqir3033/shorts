@@ -17,14 +17,26 @@ Quality bar for agents and humans. Do not weaken these without an explicit decis
 | Playback rate | 0.25×–4× (global + ≤10 segments) |
 | Text overlays | ≤10 |
 | Jump-cut keep segments | ≤24 |
+| Shorts per edit pass | 1 (no multi-short queue) |
+| Suggest moment cards | ≤5 (pick one) |
+
+## Coach guidance (NextAction)
+- Exactly one primary next action at a time; badge `(1)` + accessible copy.
+- Busy analyze/encode never pulses a disabled Continue.
+- Soft-dismiss suppresses an action id until the step is re-entered.
+- See `docs/specs/SPEC-coach-guidance.md`.
+
+## Single short
+- No “How many shorts?” control. Suggest cards replace the active window; they do not queue encodes.
+- Status UI must not show “Clip N of M” batch language.
 
 ## Effects (Polish step)
 - Look after crop/scale; captions/text after look. Encode is truth; preview may be approx.
 - Preset change resets advanced color knobs to that preset’s defaults.
 - Speed/jump-cuts change **output** duration; locked window still defines the **source** range.
 - `sourceMuted` forces effective source gain 0; reaction bus stays separate.
-- Jump cuts need silence ranges or transcript gaps; otherwise UI blocks Apply.
-- Transitions only between jump-cut segments (`none` | `dissolve` | `fade_black`).
+- Silence removal: on-device audio detect → cut gaps → refill harvest until kept speech ≈ target length `L`.
+- Transitions only between keep segments (`none` | `dissolve` | `fade_black`).
 - No library BGM in product path (schema stub unused).
 - See `docs/specs/SPEC-effects.md`.
 
@@ -37,7 +49,7 @@ Quality bar for agents and humans. Do not weaken these without an explicit decis
 
 ## Code quality
 - No `@ts-ignore` / `eslint-disable` on media math or graph builder without a linked issue.
-- Unit tests required for: `layoutMath`, `magicBytes`, `scoreCandidates`, `buildFilterGraph`, `history`, `anaphora`, `groupCards`, `captionBurn`, `window`, `timeMap`, `jumpCutPlan`, `lookPresets`.
+- Unit tests required for: `layoutMath`, `magicBytes`, `scoreCandidates`, `buildFilterGraph`, `history`, `anaphora`, `groupCards`, `captionBurn`, `window`, `timeMap`, `jumpCutPlan`, `lookPresets`, `nextAction`.
 - `EditSpec` must pass Zod `.strict()` parse before encode.
 - Ingest error codes are stable API surface — do not rename.
 

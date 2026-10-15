@@ -21,6 +21,7 @@ type Props = {
   onStartMsChange: (startMs: number) => void;
   onPlayheadChange?: (ms: number) => void;
   label?: string;
+  emphasize?: boolean;
 };
 
 function formatMs(ms: number): string {
@@ -38,6 +39,7 @@ export function SourceTimeline({
   onStartMsChange,
   onPlayheadChange,
   label,
+  emphasize,
 }: Props) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ originX: number; originStart: number } | null>(
@@ -124,7 +126,14 @@ export function SourceTimeline({
   const localPct = L > 0 ? (localPlayhead / L) * 100 : 0;
 
   return (
-    <div className="space-y-3">
+    <div
+      className={`space-y-3 ${
+        emphasize
+          ? "rounded-xl ring-2 ring-amber-400/70 ring-offset-2 ring-offset-zinc-950"
+          : ""
+      }`}
+      data-coach-target="timeline"
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-zinc-400">
         <span className="font-medium text-zinc-200">Full video</span>
         <span>

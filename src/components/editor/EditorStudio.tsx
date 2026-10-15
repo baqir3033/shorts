@@ -57,6 +57,8 @@ import {
   type CoachStep,
 } from "./EditorStepRail";
 import { normalizeEffects } from "@/media/edit-spec/normalizeEffects";
+import { resolveNextAction } from "./coach/nextAction";
+import { CoachCue, COACH_PULSE_CLASS } from "./coach/CoachCue";
 
 type Props = { projectId: string };
 
@@ -105,7 +107,6 @@ export function EditorStudio({ projectId }: Props) {
   const [placeConfirmed, setPlaceConfirmed] = useState(skipToEdit);
   const [lengthSetup, setLengthSetup] = useState<LengthSetupValue>({
     lengthMs: 30_000,
-    count: 3,
     mode: null,
   });
 
@@ -114,8 +115,9 @@ export function EditorStudio({ projectId }: Props) {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [durationMs, setDurationMs] = useState(0);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [selectedClips, setSelectedClips] = useState<ClipCandidate[]>([]);
-  const [clipIndex, setClipIndex] = useState(0);
+  const [activeCandidate, setActiveCandidate] = useState<ClipCandidate | null>(
+    null,
+  );
   const [phaseMsg, setPhaseMsg] = useState("");
   const [busy, setBusy] = useState<"analyze" | "encode" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +128,15 @@ export function EditorStudio({ projectId }: Props) {
   const [scrubMs, setScrubMs] = useState(0);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
     null,
+  );
+  const [placeInitialStartMs, setPlaceInitialStartMs] = useState(0);
+  const [momentApplied, setMomentApplied] = useState(false);
+  const [polishReadyForContinue, setPolishReadyForContinue] = useState(
+    skipToEdit,
+  );
+  const [silenceBusy, setSilenceBusy] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
+    () => new Set(),
   );
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -208,7 +219,23 @@ export function EditorStudio({ projectId }: Props) {
 
   useEffect(() => {
     setScrubMs(spec?.source.startMs ?? 0);
-  }, [spec?.source.startMs, clipIndex]);
+  }, [spec?.source.startMs]);
+
+  // Re-cue when entering a step (coachStep only — do not reset on window drag)
+  useEffect(() => {
+    setDismissedIds(new Set());
+    if (coachStep === "place") {
+      setPlaceInitialStartMs(history?.present.source.startMs ?? 0);
+      setMomentApplied(false);
+    }
+    if (coachStep === "polish") {
+      setPolishReadyForContinue(false);
+      const t = window.setTimeout(() => setPolishReadyForContinue(true), 8000);
+      return () => window.clearTimeout(t);
+    }
+    // history snapshot read once on step enter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coachStep]);
 
   // Loop preview inside the locked window while playing (R4).
   useEffect(() => {
@@ -276,6 +303,16 @@ export function EditorStudio({ projectId }: Props) {
           startMs: win.startMs,
           endMs: win.endMs,
         },
+        // Sliding the locked box clears silence-refill (window is L again).
+        jumpCuts: s.jumpCuts?.enabled
+          ? {
+              ...s.jumpCuts,
+              enabled: false,
+              keepRanges: undefined,
+              silenceRanges: undefined,
+              targetLengthMs: lockedLength,
+            }
+          : s.jumpCuts,
         captions:
           opts?.refreshCaptions !== false
             ? {
@@ -352,12 +389,14 @@ export function EditorStudio({ projectId }: Props) {
     }
   };
 
-  const onSuggest = async (opts: { lengthMs: number; count: number }) => {
+  const onSuggest = async (opts: { lengthMs: number }) => {
     if (!sourceFile) return;
     const meta = await getProjectMeta(projectId);
     if (!meta) return;
     setBusy("analyze");
     setSuggestError(null);
+    setActiveCandidate(null);
+    setMomentApplied(false);
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     try {
@@ -366,7 +405,7 @@ export function EditorStudio({ projectId }: Props) {
         safariMode: capability.mode === "safari-optimised",
         cores: capability.cores,
         lengthMs: opts.lengthMs,
-        topK: opts.count,
+        topK: 5,
         signal: abortRef.current.signal,
         onProgress: (ev: ProgressEvent) =>
           setPhaseMsg(`${ev.phase}: ${ev.message ?? ""} (${ev.percent}%)`),
@@ -446,19 +485,51 @@ export function EditorStudio({ projectId }: Props) {
     }
   };
 
-  const renderNext = async () => {
-    if (clipIndex + 1 >= selectedClips.length) return;
-    const next = clipIndex + 1;
-    setClipIndex(next);
-    applyClip(selectedClips[next]);
-    setDownloadUrl(null);
-  };
-
   const lengthReady = lengthSetup.mode !== null && lockedLength > 0;
   const aiReady =
     lengthSetup.mode === "ai" && (analysis?.candidates?.length ?? 0) > 0;
 
   const reachable = maxReachableStep(lengthReady, placeConfirmed);
+
+  const nextAction = useMemo(
+    () =>
+      resolveNextAction(
+        {
+          step: coachStep,
+          lengthMs: lockedLength,
+          mode: lengthSetup.mode,
+          busy,
+          suggestError,
+          candidateCount: analysis?.candidates?.length ?? 0,
+          momentApplied,
+          placeConfirmed,
+          windowStartMs: spec?.source.startMs ?? 0,
+          initialWindowStartMs: placeInitialStartMs,
+          polishReadyForContinue,
+          silenceBusy,
+          hasDownload: !!downloadUrl,
+          encodeError: error,
+        },
+        { dismissedIds },
+      ),
+    [
+      coachStep,
+      lockedLength,
+      lengthSetup.mode,
+      busy,
+      suggestError,
+      analysis?.candidates?.length,
+      momentApplied,
+      placeConfirmed,
+      spec?.source.startMs,
+      placeInitialStartMs,
+      polishReadyForContinue,
+      silenceBusy,
+      downloadUrl,
+      error,
+      dismissedIds,
+    ],
+  );
 
   const onContinue = () => {
     if (coachStep === "length") {
@@ -471,7 +542,9 @@ export function EditorStudio({ projectId }: Props) {
     }
     if (coachStep === "place") {
       setPlaceConfirmed(true);
-      applyLockedWindow(spec?.source.startMs ?? 0, { refreshCaptions: true });
+      if (!spec?.jumpCuts?.enabled) {
+        applyLockedWindow(spec?.source.startMs ?? 0, { refreshCaptions: true });
+      }
       setCoachStep("polish");
       return;
     }
@@ -496,6 +569,9 @@ export function EditorStudio({ projectId }: Props) {
       continueDisabled = true;
       continueReason =
         "Run Suggest shorts, or go back and choose Place manually.";
+    } else if (aiReady && !momentApplied) {
+      continueDisabled = true;
+      continueReason = "Pick one suggested moment first.";
     }
   }
 
@@ -546,18 +622,21 @@ export function EditorStudio({ projectId }: Props) {
     <div className="space-y-6">
       <EditorStepRail
         current={coachStep}
-        lengthLabel={lengthLabel}
         maxReachable={reachable}
         onSelect={(s) => {
           const idx = COACH_STEP_ORDER.indexOf(s);
           const maxIdx = COACH_STEP_ORDER.indexOf(reachable);
           if (idx <= maxIdx) setCoachStep(s);
         }}
+        nextAction={nextAction}
         continueDisabled={continueDisabled || coachStep === "render"}
         continueReason={continueReason}
         continueLabel={continueLabel}
         onContinue={onContinue}
         hideContinue={coachStep === "render"}
+        onDismissCue={() =>
+          setDismissedIds((prev) => new Set(prev).add(nextAction.id))
+        }
       />
 
       {coachStep === "length" ? (
@@ -569,6 +648,11 @@ export function EditorStudio({ projectId }: Props) {
           value={lengthSetup}
           onChange={onLengthSetupChange}
           onSuggest={onSuggest}
+          emphasizeMode={
+            nextAction.id === "pick_mode" ||
+            nextAction.id === "recover_manual" ||
+            nextAction.id === "retry_or_manual"
+          }
         />
       ) : null}
 
@@ -583,15 +667,14 @@ export function EditorStudio({ projectId }: Props) {
           {showPreview ? (
             <>
               <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-                {selectedClips.length > 0 ? (
-                  <span>
-                    Clip {clipIndex + 1} of {selectedClips.length}
-                  </span>
-                ) : (
-                  <span>
-                    {lengthSetup.mode === "ai" ? "AI + manual refine" : "Manual"}
-                  </span>
-                )}
+                <span>
+                  {activeCandidate
+                    ? "AI moment"
+                    : lengthSetup.mode === "ai"
+                      ? "AI place"
+                      : "Manual"}
+                </span>
+                <span>· 1 short</span>
                 <span>· {lengthLabel} locked</span>
                 <span>· Caps {capOn ? "on" : "off"}</span>
               </div>
@@ -632,10 +715,20 @@ export function EditorStudio({ projectId }: Props) {
               {showTimeline ? (
                 <SourceTimeline
                   durationMs={durationMs}
-                  lengthMs={lockedLength}
+                  lengthMs={
+                    spec.jumpCuts?.enabled
+                      ? Math.max(
+                          1000,
+                          spec.source.endMs - spec.source.startMs,
+                        )
+                      : lockedLength
+                  }
                   startMs={spec.source.startMs}
                   playheadMs={scrubMs}
                   label={lengthLabel}
+                  emphasize={
+                    nextAction.target === "timeline" && nextAction.emphasize
+                  }
                   onStartMsChange={(start) =>
                     applyLockedWindow(start, { seek: true })
                   }
@@ -649,13 +742,20 @@ export function EditorStudio({ projectId }: Props) {
               ) : null}
 
               {coachStep === "place" && lengthSetup.mode === "ai" ? (
-                <section className="space-y-3 rounded-2xl border border-zinc-800 p-4">
+                <section
+                  className={`space-y-3 rounded-2xl border p-4 ${
+                    nextAction.target === "momentCard" && nextAction.emphasize
+                      ? "border-amber-400/60 ring-2 ring-amber-400/40"
+                      : "border-zinc-800"
+                  }`}
+                  data-coach-target="momentCard"
+                >
                   <h3 className="text-sm font-medium text-zinc-200">
                     Suggested moments
                   </h3>
                   <p className="text-xs text-zinc-500">
-                    Tap a card to snap the locked {lengthLabel} box, then drag
-                    to fine-tune.
+                    Pick one card to snap the locked {lengthLabel} box (single
+                    short). Drag to fine-tune after.
                   </p>
                   {suggestError ? (
                     <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
@@ -664,16 +764,14 @@ export function EditorStudio({ projectId }: Props) {
                   ) : null}
                   <ul className="max-h-64 space-y-2 overflow-auto">
                     {candidates.map((c, i) => {
-                      const on =
-                        selectedClips.some((s) => s.id === c.id) &&
-                        selectedClips[clipIndex]?.id === c.id;
+                      const on = activeCandidate?.id === c.id;
                       return (
                         <li key={c.id}>
                           <button
                             type="button"
                             onClick={() => {
-                              setSelectedClips([c]);
-                              setClipIndex(0);
+                              setActiveCandidate(c);
+                              setMomentApplied(true);
                               applyClip(c);
                             }}
                             className={`w-full rounded-xl border px-3 py-3 text-left text-sm ${
@@ -762,36 +860,59 @@ export function EditorStudio({ projectId }: Props) {
                   <>
                     <button
                       type="button"
+                      data-coach-target="renderMp4"
                       disabled={busy !== null || !placeConfirmed}
-                      className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-zinc-950 disabled:opacity-40"
+                      className={`rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-zinc-950 disabled:opacity-40 ${
+                        nextAction.target === "renderMp4" &&
+                        nextAction.emphasize
+                          ? COACH_PULSE_CLASS
+                          : ""
+                      }`}
                       onClick={() => {
                         setCoachStep("render");
+                        setError(null);
                         void runEncode();
                       }}
                     >
+                      {nextAction.target === "renderMp4" &&
+                      nextAction.emphasize ? (
+                        <span className="mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-950 text-[11px] font-bold text-amber-300">
+                          1
+                        </span>
+                      ) : null}
                       {busy === "encode" ? "Rendering…" : "Render MP4"}
                     </button>
                     {downloadUrl ? (
                       <a
                         href={downloadUrl}
                         download
-                        className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-200"
+                        data-coach-target="download"
+                        className={`rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-200 ${
+                          nextAction.target === "download" &&
+                          nextAction.emphasize
+                            ? COACH_PULSE_CLASS
+                            : ""
+                        }`}
                       >
                         Download again
                       </a>
                     ) : null}
-                    {selectedClips.length > clipIndex + 1 ? (
-                      <button
-                        type="button"
-                        className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm"
-                        onClick={() => void renderNext()}
-                      >
-                        Next selected clip
-                      </button>
-                    ) : null}
                   </>
                 ) : null}
               </div>
+
+              {coachStep === "render" &&
+              (nextAction.target === "renderMp4" ||
+                nextAction.target === "download") ? (
+                <CoachCue
+                  title={nextAction.title}
+                  body={nextAction.body}
+                  emphasize={nextAction.emphasize}
+                  onDismiss={() =>
+                    setDismissedIds((prev) => new Set(prev).add(nextAction.id))
+                  }
+                />
+              ) : null}
 
               {coachStep === "render" ? (
                 <label className="block text-xs text-zinc-400">
@@ -834,9 +955,18 @@ export function EditorStudio({ projectId }: Props) {
             <EffectsPanel
               spec={spec}
               analysis={analysis}
+              sourceFile={sourceFile}
+              durationMs={durationMs}
+              targetLengthMs={lockedLength}
               selectedOverlayId={selectedOverlayId}
               onSelectOverlay={setSelectedOverlayId}
+              onSilenceBusyChange={setSilenceBusy}
+              emphasizeDetectSilence={
+                nextAction.target === "effectsDetectSilence" &&
+                nextAction.emphasize
+              }
               onChange={(next) => {
+                setPolishReadyForContinue(true);
                 setHistory((h) => {
                   if (!h) return h;
                   const normalized = normalizeEffects(next);
@@ -1111,37 +1241,16 @@ export function EditorStudio({ projectId }: Props) {
               ))}
             </section>
 
-            {selectedClips.length > 0 ? (
-              <section>
+            {activeCandidate ? (
+              <section className="text-xs text-zinc-400">
                 <h2 className="text-sm font-semibold text-zinc-100">
-                  Selected shorts
+                  Active moment
                 </h2>
-                <ul className="mt-2 max-h-40 space-y-2 overflow-auto text-xs">
-                  {selectedClips.map((c, i) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        className={`w-full rounded-lg border px-2 py-2 text-left ${
-                          i === clipIndex
-                            ? "border-amber-400/50 bg-amber-400/10"
-                            : "border-zinc-800 bg-zinc-900/80"
-                        }`}
-                        onClick={() => {
-                          setClipIndex(i);
-                          applyClip(c);
-                        }}
-                      >
-                        <div className="font-medium text-zinc-100">
-                          #{i + 1} {(c.startMs / 1000).toFixed(1)}s–
-                          {(c.endMs / 1000).toFixed(1)}s
-                        </div>
-                        {c.quote ? (
-                          <div className="text-zinc-300">“{c.quote}”</div>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <p className="mt-1 text-zinc-300">
+                  {(activeCandidate.startMs / 1000).toFixed(1)}s–
+                  {(activeCandidate.endMs / 1000).toFixed(1)}s
+                  {activeCandidate.title ? ` · ${activeCandidate.title}` : ""}
+                </p>
               </section>
             ) : null}
           </aside>
