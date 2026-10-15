@@ -50,6 +50,26 @@ export type TransitionSpec = {
   durationMs: number;
 };
 
+export type LookPresetId =
+  | "none"
+  | "vivid"
+  | "warm"
+  | "cool"
+  | "cinema"
+  | "soft"
+  | "noir"
+  | "fade_film";
+
+export type LookSpec = {
+  preset: LookPresetId;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  vignette: number;
+  sharpen: number;
+};
+
 export type EditSpec = {
   version: 1;
   source: {
@@ -58,7 +78,16 @@ export type EditSpec = {
     cropNorm: Box;
     backgroundFill?: "blur" | "solid" | "none";
     backgroundColor?: string;
+    /** Global playback rate 0.25–4; default 1 */
+    playbackRate?: number;
     speedSegments?: SpeedSegment[];
+    flipX?: boolean;
+    flipY?: boolean;
+    /** Editor-intent rotation in 90° turns (separate from probe upright). */
+    rotateQuarterTurns?: 0 | 1 | 2 | 3;
+    fadeInMs?: number;
+    fadeOutMs?: number;
+    sourceMuted?: boolean;
   };
   reaction?: {
     kind: "video" | "image" | "none";
@@ -71,6 +100,7 @@ export type EditSpec = {
     styleId: "bold-white-outline" | "bold-yellow-black" | "word-by-word-pop";
     words: TimedWord[];
   };
+  look?: LookSpec;
   textOverlays?: TextOverlay[];
   backgroundMusic?: {
     trackId: string;
@@ -79,7 +109,11 @@ export type EditSpec = {
     fadeOutMs: number;
     offset: "start" | number;
   };
-  jumpCuts?: { removeSilencesAboveMs: number; transitionMs: number };
+  jumpCuts?: {
+    enabled: boolean;
+    removeSilencesAboveMs: number;
+    transitionMs: number;
+  };
   transitions?: TransitionSpec[];
   output: {
     width: number;

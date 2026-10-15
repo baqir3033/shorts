@@ -21,6 +21,8 @@ export type EncodeInputs = {
   probe: ProbeResult;
   hasSourceAudio?: boolean;
   hasReactionAudio?: boolean;
+  silenceRanges?: { startMs: number; endMs: number }[];
+  transcriptItems?: { startMs: number; endMs: number }[];
 };
 
 export type EncodeResult = {
@@ -61,8 +63,11 @@ export async function encodeEditSpec(
       const srcName = "source.mp4";
       await ffmpeg.writeFile(srcName, await fetchFile(inputs.source));
 
+      const needsFont =
+        (spec.captions?.enabled && (spec.captions.words?.length ?? 0) > 0) ||
+        (spec.textOverlays?.length ?? 0) > 0;
       // drawtext requires an explicit font inside ffmpeg.wasm MEMFS
-      if (spec.captions?.enabled && (spec.captions.words?.length ?? 0) > 0) {
+      if (needsFont) {
         opts?.onProgress?.({
           phase: "write_inputs",
           percent: 14,
@@ -115,6 +120,8 @@ export async function encodeEditSpec(
         hasReactionAudio: !!inputs.hasReactionAudio,
         upright,
         sourceRotation: inputs.probe.rotation,
+        silenceRanges: inputs.silenceRanges,
+        transcriptItems: inputs.transcriptItems,
       });
 
       // If wasm build lacks afftdn, strip it once and rebuild-compatible
@@ -187,6 +194,57 @@ export async function encodeEditSpec(
             phase: "encode",
             percent: 30,
             message: "Pass 1/2 — retry without afftdn",
+          });
+          exit1 = await runWithTimeout([
+            ...baseInput,
+            "-map",
+            `[${graph.videoLabel}]`,
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "slow",
+            "-b:v",
+            spec.output.videoBitrate || "8M",
+            "-pass",
+            "1",
+            "-passlogfile",
+            passlog,
+            "-f",
+            "null",
+            "-",
+          ]);
+        }
+        // Retry without xfade (hard-cut concat) if wasm lacks xfade
+        if (
+          typeof exit1 === "number" &&
+          exit1 !== 0 &&
+          filterComplex.includes("xfade")
+        ) {
+          const degraded = {
+            ...spec,
+            jumpCuts: spec.jumpCuts
+              ? { ...spec.jumpCuts, transitionMs: 0 }
+              : undefined,
+            transitions: undefined,
+          };
+          graph = buildFilterGraph(degraded, {
+            hasReactionVideo: hasReaction && inputs.reactionKind === "video",
+            hasReactionImage: hasReaction && inputs.reactionKind === "image",
+            hasSourceAudio:
+              inputs.hasSourceAudio !== false && inputs.probe.hasAudio,
+            hasReactionAudio: !!inputs.hasReactionAudio,
+            upright,
+            sourceRotation: inputs.probe.rotation,
+            silenceRanges: inputs.silenceRanges,
+            transcriptItems: inputs.transcriptItems,
+          });
+          filterComplex = graph.filterComplex;
+          baseInput[baseInput.indexOf("-filter_complex") + 1] = filterComplex;
+          opts?.onProgress?.({
+            phase: "encode",
+            percent: 31,
+            message: "Pass 1/2 — hard cuts (xfade unavailable)",
           });
           exit1 = await runWithTimeout([
             ...baseInput,

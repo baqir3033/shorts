@@ -6,7 +6,6 @@ import {
   PIP_SIZE_MAX,
   PIP_SIZE_MIN,
 } from "@/lib/constants";
-// OUTPUT_* used in defaultEditSpec
 import type { EditSpec } from "./types";
 
 const BoxSchema = z.object({
@@ -35,6 +34,25 @@ const LayoutSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+const LookSchema = z.object({
+  preset: z.enum([
+    "none",
+    "vivid",
+    "warm",
+    "cool",
+    "cinema",
+    "soft",
+    "noir",
+    "fade_film",
+  ]),
+  brightness: z.number().min(-1).max(1),
+  contrast: z.number().min(0.5).max(2),
+  saturation: z.number().min(0).max(2),
+  temperature: z.number().min(-1).max(1),
+  vignette: z.number().min(0).max(1),
+  sharpen: z.number().min(0).max(1),
+});
+
 export const EditSpecSchema = z
   .object({
     version: z.literal(1),
@@ -44,6 +62,7 @@ export const EditSpecSchema = z
       cropNorm: BoxSchema,
       backgroundFill: z.enum(["blur", "solid", "none"]).optional(),
       backgroundColor: z.string().optional(),
+      playbackRate: z.number().min(0.25).max(4).optional(),
       speedSegments: z
         .array(
           z.object({
@@ -54,6 +73,17 @@ export const EditSpecSchema = z
         )
         .max(10)
         .optional(),
+      flipX: z.boolean().optional(),
+      flipY: z.boolean().optional(),
+      rotateQuarterTurns: z.union([
+        z.literal(0),
+        z.literal(1),
+        z.literal(2),
+        z.literal(3),
+      ]).optional(),
+      fadeInMs: z.number().min(0).max(2000).optional(),
+      fadeOutMs: z.number().min(0).max(2000).optional(),
+      sourceMuted: z.boolean().optional(),
     }),
     reaction: z
       .object({
@@ -80,10 +110,12 @@ export const EditSpecSchema = z
             startMs: z.number().min(0),
             endMs: z.number().min(0),
             text: z.string(),
+            emphasis: z.boolean().optional(),
           }),
         ),
       })
       .optional(),
+    look: LookSchema.optional(),
     textOverlays: z
       .array(
         z.object({
@@ -115,6 +147,7 @@ export const EditSpecSchema = z
       .optional(),
     jumpCuts: z
       .object({
+        enabled: z.boolean(),
         removeSilencesAboveMs: z.number().min(100).max(5000),
         transitionMs: z.number().min(0).max(500),
       })
@@ -150,7 +183,10 @@ export function parseEditSpec(input: unknown): EditSpec {
   return EditSpecSchema.parse(input) as EditSpec;
 }
 
-export function defaultEditSpec(durationMs: number, cropNorm: EditSpec["source"]["cropNorm"]): EditSpec {
+export function defaultEditSpec(
+  durationMs: number,
+  cropNorm: EditSpec["source"]["cropNorm"],
+): EditSpec {
   const endMs = Math.min(durationMs, 30_000);
   return {
     version: 1,
@@ -159,6 +195,13 @@ export function defaultEditSpec(durationMs: number, cropNorm: EditSpec["source"]
       endMs: Math.max(1000, endMs),
       cropNorm,
       backgroundFill: "none",
+      playbackRate: 1,
+      flipX: false,
+      flipY: false,
+      rotateQuarterTurns: 0,
+      fadeInMs: 0,
+      fadeOutMs: 0,
+      sourceMuted: false,
     },
     reaction: {
       kind: "none",
@@ -176,6 +219,20 @@ export function defaultEditSpec(durationMs: number, cropNorm: EditSpec["source"]
       enabled: false,
       styleId: "bold-white-outline",
       words: [],
+    },
+    look: {
+      preset: "none",
+      brightness: 0,
+      contrast: 1,
+      saturation: 1,
+      temperature: 0,
+      vignette: 0,
+      sharpen: 0,
+    },
+    jumpCuts: {
+      enabled: false,
+      removeSilencesAboveMs: 400,
+      transitionMs: 120,
     },
     output: {
       width: OUTPUT_WIDTH,

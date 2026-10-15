@@ -59,4 +59,75 @@ describe("buildFilterGraph", () => {
       ),
     ).toThrow();
   });
+
+  it("applies vivid look and 1.5x speed", () => {
+    const spec = defaultEditSpec(60_000, { x: 0, y: 0, w: 1, h: 1 });
+    spec.look = {
+      preset: "vivid",
+      brightness: 0.05,
+      contrast: 1.2,
+      saturation: 1.35,
+      temperature: 0.05,
+      vignette: 0.15,
+      sharpen: 0.35,
+    };
+    spec.source.playbackRate = 1.5;
+    const g = buildFilterGraph(spec, {
+      upright: { w: 1080, h: 1920 },
+      hasSourceAudio: true,
+    });
+    expect(g.filterComplex).toContain("eq=");
+    expect(g.filterComplex).toContain("setpts=");
+    expect(g.outputDurationSec).toBeCloseTo(20, 0);
+  });
+
+  it("applies flip and fade", () => {
+    const spec = defaultEditSpec(30_000, { x: 0, y: 0, w: 1, h: 1 });
+    spec.source.flipX = true;
+    spec.source.fadeInMs = 250;
+    const g = buildFilterGraph(spec, {
+      upright: { w: 1080, h: 1920 },
+      hasSourceAudio: true,
+    });
+    expect(g.filterComplex).toContain("hflip");
+    expect(g.filterComplex).toContain("fade=t=in");
+  });
+
+  it("jump cuts concat segments when silence known", () => {
+    const spec = defaultEditSpec(10_000, { x: 0, y: 0, w: 1, h: 1 });
+    spec.source.endMs = 10_000;
+    spec.jumpCuts = {
+      enabled: true,
+      removeSilencesAboveMs: 400,
+      transitionMs: 0,
+    };
+    const g = buildFilterGraph(spec, {
+      upright: { w: 1080, h: 1920 },
+      hasSourceAudio: true,
+      silenceRanges: [{ startMs: 3_000, endMs: 5_000 }],
+    });
+    expect(g.filterComplex).toContain("concat=");
+  });
+
+  it("burns text overlay drawtext", () => {
+    const spec = defaultEditSpec(30_000, { x: 0, y: 0, w: 1, h: 1 });
+    spec.textOverlays = [
+      {
+        id: "t1",
+        text: "HOOK",
+        startMs: 0,
+        endMs: 2000,
+        positionNorm: { x: 0.5, y: 0.2 },
+        fontSize: 64,
+        fontFamily: "bold",
+        color: "#ffffff",
+        animation: "none",
+      },
+    ];
+    const g = buildFilterGraph(spec, {
+      upright: { w: 1080, h: 1920 },
+    });
+    expect(g.filterComplex).toContain("drawtext=");
+    expect(g.filterComplex).toContain("HOOK");
+  });
 });

@@ -1,24 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import type { AnalysisResult, ClipCandidate } from "@/media/edit-spec/types";
+import { resolveLengthMs } from "@/media/edit-spec/window";
 
-export type WizardResult = {
+export type LengthSetupValue = {
   lengthMs: number;
   count: number;
-  mode: "manual" | "ai";
-  selected: ClipCandidate[];
-  manual?: { startMs: number; endMs: number };
+  mode: "manual" | "ai" | null;
 };
 
 type Props = {
   durationMs: number;
   busy: boolean;
   phaseMsg: string;
-  analysis: AnalysisResult | null;
   suggestError: string | null;
+  value: LengthSetupValue;
+  onChange: (next: LengthSetupValue) => void;
   onSuggest: (opts: { lengthMs: number; count: number }) => Promise<void>;
-  onComplete: (result: WizardResult) => void;
 };
 
 const LENGTH_PRESETS = [
@@ -32,71 +30,58 @@ export function ClipWizard({
   durationMs,
   busy,
   phaseMsg,
-  analysis,
   suggestError,
+  value,
+  onChange,
   onSuggest,
-  onComplete,
 }: Props) {
-  const [lengthMs, setLengthMs] = useState(30_000);
-  const [customSec, setCustomSec] = useState(45);
-  const [useCustom, setUseCustom] = useState(false);
-  const [count, setCount] = useState(3);
-  const [mode, setMode] = useState<"manual" | "ai" | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [manualStart, setManualStart] = useState(0);
-  const [manualEnd, setManualEnd] = useState(
-    Math.min(durationMs, 30_000),
+  const presetMatch = LENGTH_PRESETS.some(
+    (p) => resolveLengthMs(p.ms, durationMs) === value.lengthMs,
+  );
+  const [useCustom, setUseCustom] = useState(!presetMatch);
+  const [customSec, setCustomSec] = useState(
+    Math.max(5, Math.round(value.lengthMs / 1000) || 45),
   );
 
-  const resolvedLength = useCustom
-    ? Math.min(durationMs, Math.max(5_000, customSec * 1000))
-    : lengthMs;
-
-  const candidates = analysis?.candidates ?? [];
-
-  const toggle = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else if (next.size < count) next.add(id);
-      return next;
-    });
-  };
+  const resolvedLength = resolveLengthMs(value.lengthMs, durationMs);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 rounded-2xl border border-zinc-800 bg-zinc-950/90 p-6">
+    <div className="space-y-6 rounded-2xl border border-zinc-800 bg-zinc-950/90 p-6">
       <div>
         <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-zinc-50">
-          Set up your shorts
+          Choose short length
         </h2>
         <p className="mt-1 text-sm text-zinc-400">
-          AI finds moments with a hook and a payoff from speech — not zooms.
-          Nothing is cut until you confirm.
+          Pick how long each short is. Next you&apos;ll slide a fixed window
+          along the full video — length won&apos;t change.
         </p>
       </div>
 
       <section>
         <h3 className="text-sm font-medium text-zinc-200">Seconds per short</h3>
         <div className="mt-2 flex flex-wrap gap-2">
-          {LENGTH_PRESETS.map((p) => (
-            <button
-              key={p.ms}
-              type="button"
-              disabled={p.ms > durationMs}
-              className={`rounded-lg px-3 py-1.5 text-sm ${
-                !useCustom && lengthMs === p.ms
-                  ? "bg-amber-400 font-semibold text-zinc-950"
-                  : "border border-zinc-700 text-zinc-200 disabled:opacity-40"
-              }`}
-              onClick={() => {
-                setUseCustom(false);
-                setLengthMs(p.ms);
-                setManualEnd(Math.min(durationMs, manualStart + p.ms));
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
+          {LENGTH_PRESETS.map((p) => {
+            const ms = resolveLengthMs(p.ms, durationMs);
+            const selected = !useCustom && value.lengthMs === ms;
+            return (
+              <button
+                key={p.ms}
+                type="button"
+                disabled={p.ms > durationMs}
+                className={`rounded-lg px-3 py-1.5 text-sm ${
+                  selected
+                    ? "bg-amber-400 font-semibold text-zinc-950"
+                    : "border border-zinc-700 text-zinc-200 disabled:opacity-40"
+                }`}
+                onClick={() => {
+                  setUseCustom(false);
+                  onChange({ ...value, lengthMs: ms });
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
           <button
             type="button"
             className={`rounded-lg px-3 py-1.5 text-sm ${
@@ -104,7 +89,16 @@ export function ClipWizard({
                 ? "bg-amber-400 font-semibold text-zinc-950"
                 : "border border-zinc-700 text-zinc-200"
             }`}
-            onClick={() => setUseCustom(true)}
+            onClick={() => {
+              setUseCustom(true);
+              onChange({
+                ...value,
+                lengthMs: resolveLengthMs(
+                  Math.max(5_000, customSec * 1000),
+                  durationMs,
+                ),
+              });
+            }}
           >
             Custom
           </button>
@@ -115,10 +109,20 @@ export function ClipWizard({
             <input
               type="number"
               min={5}
-              max={Math.floor(durationMs / 1000)}
+              max={Math.max(5, Math.floor(durationMs / 1000))}
               value={customSec}
               className="mt-1 w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100"
-              onChange={(e) => setCustomSec(Number(e.target.value) || 5)}
+              onChange={(e) => {
+                const sec = Number(e.target.value) || 5;
+                setCustomSec(sec);
+                onChange({
+                  ...value,
+                  lengthMs: resolveLengthMs(
+                    Math.max(5_000, sec * 1000),
+                    durationMs,
+                  ),
+                });
+              }}
             />
           </label>
         ) : null}
@@ -126,15 +130,20 @@ export function ClipWizard({
 
       <section>
         <h3 className="text-sm font-medium text-zinc-200">
-          How many shorts? ({count})
+          How many shorts? ({value.count})
         </h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Used when you ask AI to suggest moments.
+        </p>
         <input
           type="range"
           min={1}
           max={8}
-          value={count}
+          value={value.count}
           className="mt-2 w-full"
-          onChange={(e) => setCount(Number(e.target.value))}
+          onChange={(e) =>
+            onChange({ ...value, count: Number(e.target.value) })
+          }
         />
       </section>
 
@@ -142,24 +151,29 @@ export function ClipWizard({
         <button
           type="button"
           disabled={busy}
-          className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-40"
-          onClick={() => {
-            setMode("manual");
-            setManualEnd(
-              Math.min(durationMs, manualStart + resolvedLength),
-            );
-          }}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
+            value.mode === "manual"
+              ? "bg-amber-400 text-zinc-950"
+              : "bg-zinc-100 text-zinc-950"
+          }`}
+          onClick={() => onChange({ ...value, mode: "manual" })}
         >
-          Manual trim
+          Place manually
         </button>
         <button
           type="button"
           disabled={busy}
-          className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-40"
+          className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
+            value.mode === "ai"
+              ? "bg-amber-400 text-zinc-950"
+              : "border border-amber-400/60 bg-amber-400/15 text-amber-50"
+          }`}
           onClick={async () => {
-            setMode("ai");
-            setSelectedIds(new Set());
-            await onSuggest({ lengthMs: resolvedLength, count });
+            onChange({ ...value, mode: "ai" });
+            await onSuggest({
+              lengthMs: resolvedLength,
+              count: value.count,
+            });
           }}
         >
           {busy ? "Finding moments…" : "Suggest shorts"}
@@ -175,124 +189,17 @@ export function ClipWizard({
         </p>
       ) : null}
 
-      {mode === "manual" ? (
-        <section className="space-y-3 rounded-xl border border-zinc-800 p-4">
-          <h3 className="text-sm font-medium text-zinc-200">Manual range</h3>
-          <label className="block text-xs text-zinc-400">
-            Start (seconds)
-            <input
-              type="number"
-              min={0}
-              max={durationMs / 1000}
-              step={0.1}
-              value={(manualStart / 1000).toFixed(1)}
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
-              onChange={(e) => {
-                const s = Math.max(0, Number(e.target.value) * 1000);
-                setManualStart(s);
-                setManualEnd(Math.min(durationMs, s + resolvedLength));
-              }}
-            />
-          </label>
-          <label className="block text-xs text-zinc-400">
-            End (seconds)
-            <input
-              type="number"
-              min={0}
-              max={durationMs / 1000}
-              step={0.1}
-              value={(manualEnd / 1000).toFixed(1)}
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
-              onChange={(e) =>
-                setManualEnd(
-                  Math.min(durationMs, Math.max(manualStart + 1000, Number(e.target.value) * 1000)),
-                )
-              }
-            />
-          </label>
-          <button
-            type="button"
-            className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950"
-            onClick={() =>
-              onComplete({
-                lengthMs: resolvedLength,
-                count: 1,
-                mode: "manual",
-                selected: [],
-                manual: { startMs: manualStart, endMs: manualEnd },
-              })
-            }
-          >
-            Use this range
-          </button>
-        </section>
+      {value.mode === "manual" ? (
+        <p className="text-sm text-zinc-400">
+          Next: drag the {Math.round(resolvedLength / 1000)}s box on the full
+          timeline to pick your chunk.
+        </p>
       ) : null}
-
-      {mode === "ai" && candidates.length > 0 ? (
-        <section className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-200">
-            Pick up to {count} moments
-          </h3>
-          <p className="text-xs text-zinc-500">
-            Each card is a speech moment (hook → idea → ending). Vertical crop
-            is just fit-to-phone, not the AI.
-          </p>
-          <ul className="max-h-80 space-y-2 overflow-auto">
-            {candidates.map((c, i) => {
-              const on = selectedIds.has(c.id);
-              return (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(c.id)}
-                    className={`w-full rounded-xl border px-3 py-3 text-left text-sm ${
-                      on
-                        ? "border-amber-400/60 bg-amber-400/10"
-                        : "border-zinc-800 bg-zinc-900/60 hover:border-zinc-600"
-                    }`}
-                  >
-                    <div className="flex justify-between gap-2">
-                      <span className="font-medium text-zinc-100">
-                        Moment {i + 1} · {(c.startMs / 1000).toFixed(1)}s–
-                        {(c.endMs / 1000).toFixed(1)}s
-                      </span>
-                      <span className="text-xs text-zinc-500">
-                        {Math.round(c.score * 100)}
-                      </span>
-                    </div>
-                    {c.title ? (
-                      <p className="mt-1 text-sm font-semibold text-amber-100">
-                        {c.title}
-                      </p>
-                    ) : null}
-                    {c.quote ? (
-                      <p className="mt-1 text-base leading-snug text-zinc-50">
-                        “{c.quote}”
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-zinc-400">{c.reason}</p>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <button
-            type="button"
-            disabled={selectedIds.size === 0}
-            className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-40"
-            onClick={() => {
-              const selected = candidates.filter((c) => selectedIds.has(c.id));
-              onComplete({
-                lengthMs: resolvedLength,
-                count,
-                mode: "ai",
-                selected,
-              });
-            }}
-          >
-            Edit selected ({selectedIds.size})
-          </button>
-        </section>
+      {value.mode === "ai" && !busy ? (
+        <p className="text-sm text-zinc-400">
+          Next: pick a suggested moment, then fine-tune by sliding the locked
+          box.
+        </p>
       ) : null}
     </div>
   );

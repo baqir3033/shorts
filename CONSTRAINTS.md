@@ -12,10 +12,32 @@ Quality bar for agents and humans. Do not weaken these without an explicit decis
 | Output | 1080×1920 · 30 fps · H.264/AAC/MP4 · ~8 Mbps |
 | PiP size | 5–25% |
 | Edit history depth | 30 |
+| Timeline selection | Locked length `L`; slide-only window (`endMs - startMs === L`) |
+| Look presets | none, vivid, warm, cool, cinema, soft, noir, fade_film |
+| Playback rate | 0.25×–4× (global + ≤10 segments) |
+| Text overlays | ≤10 |
+| Jump-cut keep segments | ≤24 |
+
+## Effects (Polish step)
+- Look after crop/scale; captions/text after look. Encode is truth; preview may be approx.
+- Preset change resets advanced color knobs to that preset’s defaults.
+- Speed/jump-cuts change **output** duration; locked window still defines the **source** range.
+- `sourceMuted` forces effective source gain 0; reaction bus stays separate.
+- Jump cuts need silence ranges or transcript gaps; otherwise UI blocks Apply.
+- Transitions only between jump-cut segments (`none` | `dissolve` | `fade_black`).
+- No library BGM in product path (schema stub unused).
+- See `docs/specs/SPEC-effects.md`.
+
+## Timeline selection (locked window)
+- Length is chosen before placement (presets or custom). Edges are never dragged to resize.
+- Sliding updates `startMs` only; `endMs = startMs + L`, clamped to `[0, durationMs - L]`.
+- AI candidates snap the same locked box; manual refine remains available.
+- Step coach order: Length → Place clip → Polish → Render. Render is gated until place is confirmed.
+- See `docs/specs/SPEC-timeline-selection.md`.
 
 ## Code quality
 - No `@ts-ignore` / `eslint-disable` on media math or graph builder without a linked issue.
-- Unit tests required for: `layoutMath`, `magicBytes`, `scoreCandidates`, `buildFilterGraph`, `history`, `anaphora`, `groupCards`, `captionBurn`.
+- Unit tests required for: `layoutMath`, `magicBytes`, `scoreCandidates`, `buildFilterGraph`, `history`, `anaphora`, `groupCards`, `captionBurn`, `window`, `timeMap`, `jumpCutPlan`, `lookPresets`.
 - `EditSpec` must pass Zod `.strict()` parse before encode.
 - Ingest error codes are stable API surface — do not rename.
 
@@ -43,3 +65,6 @@ Quality bar for agents and humans. Do not weaken these without an explicit decis
 | Local LLM OOM / skip | template title/reason; disable further LLM loads |
 | `afftdn` missing in ffmpeg.wasm | strip denoise filter; keep loudnorm + highpass |
 | Two-pass encode fails | single-pass CRF 18 + preset slow fallback |
+| `xfade` unsupported in wasm | hard cut between jump-cut segments + `transitions_degraded` |
+| Long `atempo` chain | clamp/split rates; warn `atempo_chain_long` |
+| Jump cut with no silence data | UI disables Apply; encode ignores jumpCuts.enabled |
