@@ -98,7 +98,7 @@ export async function scoreCandidatesDeep(
 
     const lengthMs = input.lengthsMs?.[0] ?? 30_000;
     const topK = input.topK ?? 8;
-    let candidates = findShortsMoments({
+    const candidates = findShortsMoments({
       durationMs: input.durationMs,
       upright: input.upright,
       lengthMs,

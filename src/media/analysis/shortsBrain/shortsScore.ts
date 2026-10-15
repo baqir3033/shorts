@@ -128,7 +128,7 @@ export function findShortsMoments(input: ShortsBrainInput): ShortsCandidate[] {
 
     const andThen = (text.match(/\b(and then|and uh|so yeah)\b/gi) ?? [])
       .length;
-    let standalone = Math.max(0, substance - andThen * 0.08);
+    const standalone = Math.max(0, substance - andThen * 0.08);
 
     const sent =
       input.sentimentByText?.get(text) ??

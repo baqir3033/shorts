@@ -211,7 +211,7 @@ export async function encodeEditSpec(
       }
 
       // If two-pass still fails, fall back to single-pass CRF quality path
-      let usedTwoPass = typeof exit1 === "number" && exit1 === 0;
+      const usedTwoPass = typeof exit1 === "number" && exit1 === 0;
 
       if (!usedTwoPass) {
         opts?.onProgress?.({

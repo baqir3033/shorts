@@ -82,7 +82,10 @@ export async function transcribeWhisper(
     }
 
     opts?.onProgress?.(95, "Merging transcript");
-    const transcript = normalizeWhisperResult(result, pcm.durationMs);
+    const transcript = normalizeWhisperResult(
+      result as WhisperRawResult,
+      pcm.durationMs,
+    );
     const wordCount = countWords(transcript);
 
     if (wordCount < 8) {
@@ -294,9 +297,18 @@ function downsample(
   return out;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WhisperChunk = {
+  text?: string;
+  timestamp?: [number | null, number | null] | number[];
+};
+
+type WhisperRawResult = {
+  text?: string;
+  chunks?: WhisperChunk[];
+};
+
 function normalizeWhisperResult(
-  result: any,
+  result: WhisperRawResult | null | undefined,
   fallbackDurationMs: number,
 ): TranscriptResult {
   const chunks = result?.chunks ?? [];
@@ -305,7 +317,7 @@ function normalizeWhisperResult(
 
   if (Array.isArray(chunks) && chunks.length) {
     const looksLikeWords = chunks.every(
-      (c: { text?: string }) =>
+      (c) =>
         String(c.text ?? "")
           .trim()
           .split(/\s+/).length <= 3,
@@ -313,7 +325,9 @@ function normalizeWhisperResult(
 
     for (const c of chunks) {
       const t0 = Number(c.timestamp?.[0] ?? 0);
-      const t1 = Number(c.timestamp?.[1] != null ? c.timestamp[1] : t0 + 0.4);
+      const t1 = Number(
+        c.timestamp?.[1] != null ? c.timestamp[1] : t0 + 0.4,
+      );
       const startMs = Math.round(t0 * 1000);
       const endMs = Math.round(Math.max(t1, t0 + 0.05) * 1000);
       const text = String(c.text ?? "").trim();
