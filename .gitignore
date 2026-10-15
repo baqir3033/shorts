@@ -32,9 +32,18 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
+
+# local scratch / extract junk
+_design_extract.txt
+*.log
+
+# agent / IDE
+.cursor/
+agent-transcripts/
 
 # typescript
 *.tsbuildinfo

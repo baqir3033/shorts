@@ -1,103 +1,146 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { AppShell } from "@/components/AppShell";
+import { GuestSignIn } from "@/components/GuestSignIn";
+import { UploadDropzone } from "@/components/UploadDropzone";
+import {
+  deleteLocalProject,
+  getCachedSourceFile,
+  listLocalProjectMetas,
+  type LocalProjectMeta,
+} from "@/media/ingest/indexedDb";
+import { MAX_PROJECTS_PER_USER } from "@/lib/constants";
+
+export default function HomePage() {
+  const router = useRouter();
+  const [projects, setProjects] = useState<LocalProjectMeta[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
+  const [showGuest, setShowGuest] = useState(false);
+
+  const refresh = async () => {
+    const metas = await listLocalProjectMetas();
+    const live: LocalProjectMeta[] = [];
+    for (const m of metas) {
+      const file = await getCachedSourceFile(m.projectId);
+      if (!file) {
+        await deleteLocalProject(m.projectId);
+        continue;
+      }
+      live.push(m);
+    }
+    setProjects(live);
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const openProject = async (id: string) => {
+    const file = await getCachedSourceFile(id);
+    if (!file) {
+      await deleteLocalProject(id);
+      await refresh();
+      setToast("That project’s video is missing — removed from recents.");
+      return;
+    }
+    router.push(`/editor/${id}?step=wizard`);
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <AppShell>
+      <main className="mx-auto flex min-h-[calc(100vh-57px)] max-w-5xl flex-col px-6 py-10">
+        <header className="flex flex-wrap items-start justify-between gap-6">
+          <div>
+            <h1 className="max-w-xl font-[family-name:var(--font-display)] text-4xl font-semibold leading-tight text-zinc-50 md:text-5xl">
+              Upload a video. Choose length. Pick clips. Export.
+            </h1>
+            <p className="mt-3 max-w-lg text-zinc-400">
+              Local files only. You decide how many seconds and which shorts to
+              keep — then export vertical PiP-ready MP4s. Up to{" "}
+              {MAX_PROJECTS_PER_USER} recent projects saved on this device.
+            </p>
+          </div>
+          <div className="text-right">
+            <button
+              type="button"
+              className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+              onClick={() => setShowGuest((v) => !v)}
+            >
+              {showGuest ? "Hide account" : "Optional sign-in"}
+            </button>
+            {showGuest ? (
+              <div className="mt-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 text-left">
+                <GuestSignIn />
+              </div>
+            ) : null}
+          </div>
+        </header>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+        <section
+          id="upload"
+          className="mt-14 flex flex-1 scroll-mt-24 flex-col items-center justify-center"
+        >
+          <UploadDropzone
+            onReady={(id) => {
+              void refresh();
+              router.push(`/editor/${id}?step=wizard`);
+            }}
+          />
+        </section>
+
+        {toast ? (
+          <p className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+            {toast}
+          </p>
+        ) : null}
+
+        <section id="recents" className="mt-16 scroll-mt-24 pb-10">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+              Recent projects
+            </h2>
+            <span className="text-xs text-zinc-500">
+              {projects.length}/{MAX_PROJECTS_PER_USER} slots
+            </span>
+          </div>
+          {projects.length === 0 ? (
+            <p className="text-sm text-zinc-500">No projects yet — upload a video above.</p>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {projects.map((p) => (
+                <li
+                  key={p.projectId}
+                  className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+                >
+                  <button
+                    type="button"
+                    className="text-left"
+                    onClick={() => void openProject(p.projectId)}
+                  >
+                    <div className="font-medium text-zinc-100">{p.title}</div>
+                    <div className="text-xs text-zinc-500">
+                      {(p.bytes / (1024 * 1024)).toFixed(1)} MB ·{" "}
+                      {(p.probe.durationMs / 1000).toFixed(0)}s
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-zinc-500 hover:text-red-300"
+                    onClick={async () => {
+                      await deleteLocalProject(p.projectId);
+                      await refresh();
+                    }}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    </AppShell>
   );
 }
