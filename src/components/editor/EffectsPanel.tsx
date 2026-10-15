@@ -30,7 +30,6 @@ const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function EffectsPanel({
   spec,
-  analysis: _analysis,
   sourceFile,
   durationMs,
   targetLengthMs,
@@ -165,7 +164,7 @@ export function EffectsPanel({
             <button
               key={id}
               type="button"
-              className={`rounded-lg px-2 py-1 text-xs capitalize ${
+              className={`min-h-11 rounded-lg px-3 py-2 text-xs capitalize ${
                 look.preset === id
                   ? "bg-amber-400 font-semibold text-zinc-950"
                   : "border border-zinc-700 text-zinc-200"
@@ -253,7 +252,7 @@ export function EffectsPanel({
             <button
               key={r}
               type="button"
-              className={`rounded-lg px-2 py-1 text-xs ${
+              className={`min-h-11 rounded-lg px-3 py-2 text-xs ${
                 Math.abs(rate - r) < 0.001
                   ? "bg-amber-400 font-semibold text-zinc-950"
                   : "border border-zinc-700 text-zinc-200"
@@ -439,7 +438,7 @@ export function EffectsPanel({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className={`rounded-lg px-2 py-1 text-xs ${
+            className={`min-h-11 rounded-lg px-3 py-2 text-xs ${
               spec.source.flipX
                 ? "bg-amber-400 font-semibold text-zinc-950"
                 : "border border-zinc-700 text-zinc-200"
@@ -455,7 +454,7 @@ export function EffectsPanel({
           </button>
           <button
             type="button"
-            className={`rounded-lg px-2 py-1 text-xs ${
+            className={`min-h-11 rounded-lg px-3 py-2 text-xs ${
               spec.source.flipY
                 ? "bg-amber-400 font-semibold text-zinc-950"
                 : "border border-zinc-700 text-zinc-200"
@@ -673,7 +672,7 @@ export function EffectsPanel({
             type="button"
             data-coach-target="effectsDetectSilence"
             disabled={silenceBusy || !sourceFile}
-            className={`rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-zinc-950 disabled:opacity-40 ${
+            className={`min-h-11 rounded-lg bg-amber-400 px-3 py-2 text-xs font-semibold text-zinc-950 disabled:opacity-40 ${
               emphasizeDetectSilence
                 ? "animate-pulse ring-2 ring-amber-300 ring-offset-2 ring-offset-zinc-950"
                 : ""

@@ -24,7 +24,17 @@ Quality bar for agents and humans. Do not weaken these without an explicit decis
 - Exactly one primary next action at a time; badge `(1)` + accessible copy.
 - Busy analyze/encode never pulses a disabled Continue.
 - Soft-dismiss suppresses an action id until the step is re-entered.
+- During encode, the fullscreen progress overlay owns attention; rail cue may remain.
 - See `docs/specs/SPEC-coach-guidance.md`.
+
+## Mobile shell
+- Under `lg` (1024px): sticky step rail, sticky bottom primary CTA dock, safe-area padding, touch targets ≥44px.
+- Preview height-capped so Polish tools stay reachable; Polish uses Effects/Captions/More tabs.
+- See `docs/specs/SPEC-mobile-shell.md`.
+
+## Encode progress
+- Encode shows a blocking fullscreen overlay with percent bar; no cancel in v1; milestone progress only.
+- See `docs/specs/SPEC-encode-progress.md`.
 
 ## Single short
 - No “How many shorts?” control. Suggest cards replace the active window; they do not queue encodes.

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Sans, Syne } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
@@ -19,6 +19,13 @@ export const metadata: Metadata = {
     "Local-upload AI video-to-shorts editor with dumb-client FFmpeg execution",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#09090b",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,7 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${syne.variable} ${dmSans.variable} min-h-screen bg-zinc-950 font-[family-name:var(--font-body)] text-zinc-100 antialiased`}
+        className={`${syne.variable} ${dmSans.variable} min-h-dvh bg-zinc-950 font-[family-name:var(--font-body)] text-zinc-100 antialiased`}
         suppressHydrationWarning
       >
         <Providers>{children}</Providers>

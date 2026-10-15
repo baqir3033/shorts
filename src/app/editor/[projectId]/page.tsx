@@ -13,7 +13,7 @@ export default function EditorPage({
 
   return (
     <AppShell title="Editor" showEditorActions>
-      <main className="mx-auto max-w-7xl px-4 py-6 md:px-6">
+      <main className="mx-auto max-w-7xl px-3 py-3 pb-[calc(6rem+var(--safe-bottom))] md:px-6 md:py-6 md:pb-6">
         <Suspense
           fallback={
             <div className="animate-pulse text-zinc-400">Loading editor…</div>

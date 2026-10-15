@@ -48,7 +48,7 @@ export function ClipWizard({
   const resolvedLength = resolveLengthMs(value.lengthMs, durationMs);
 
   return (
-    <div className="space-y-6 rounded-2xl border border-zinc-800 bg-zinc-950/90 p-6">
+    <div className="space-y-6 rounded-2xl border border-zinc-800 bg-zinc-950/90 p-4 sm:p-6">
       <div>
         <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-zinc-50">
           Choose short length
@@ -61,7 +61,7 @@ export function ClipWizard({
 
       <section>
         <h3 className="text-sm font-medium text-zinc-200">Seconds per short</h3>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 grid grid-cols-4 gap-2 sm:flex sm:flex-wrap">
           {LENGTH_PRESETS.map((p) => {
             const ms = resolveLengthMs(p.ms, durationMs);
             const selected = !useCustom && value.lengthMs === ms;
@@ -70,7 +70,7 @@ export function ClipWizard({
                 key={p.ms}
                 type="button"
                 disabled={p.ms > durationMs}
-                className={`rounded-lg px-3 py-1.5 text-sm ${
+                className={`min-h-11 rounded-lg px-3 py-2 text-sm ${
                   selected
                     ? "bg-amber-400 font-semibold text-zinc-950"
                     : "border border-zinc-700 text-zinc-200 disabled:opacity-40"
@@ -86,7 +86,7 @@ export function ClipWizard({
           })}
           <button
             type="button"
-            className={`rounded-lg px-3 py-1.5 text-sm ${
+            className={`min-h-11 rounded-lg px-3 py-2 text-sm sm:col-auto col-span-4 ${
               useCustom
                 ? "bg-amber-400 font-semibold text-zinc-950"
                 : "border border-zinc-700 text-zinc-200"
@@ -113,7 +113,7 @@ export function ClipWizard({
               min={5}
               max={Math.max(5, Math.floor(durationMs / 1000))}
               value={customSec}
-              className="mt-1 w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100"
+              className="mt-1 min-h-11 w-full max-w-xs rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
               onChange={(e) => {
                 const sec = Number(e.target.value) || 5;
                 setCustomSec(sec);
@@ -132,12 +132,12 @@ export function ClipWizard({
 
       <section>
         <h3 className="text-sm font-medium text-zinc-200">How to place it</h3>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <button
             type="button"
             data-coach-target="placeManual"
             disabled={busy}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
+            className={`min-h-11 w-full rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 sm:w-auto ${
               value.mode === "manual"
                 ? "bg-amber-400 text-zinc-950"
                 : emphasizeMode
@@ -152,7 +152,7 @@ export function ClipWizard({
             type="button"
             data-coach-target="suggest"
             disabled={busy}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
+            className={`min-h-11 w-full rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 sm:w-auto ${
               value.mode === "ai"
                 ? "bg-amber-400 text-zinc-950"
                 : emphasizeMode
@@ -184,8 +184,8 @@ export function ClipWizard({
             1
           </span>
           Press{" "}
-          <span className="font-semibold">Continue to place clip</span> above —
-          then drag the {Math.round(resolvedLength / 1000)}s box.
+          <span className="font-semibold">Continue to place clip</span> — then
+          drag the {Math.round(resolvedLength / 1000)}s box.
         </p>
       ) : null}
       {value.mode === "ai" && !busy && !suggestError ? (
@@ -194,8 +194,8 @@ export function ClipWizard({
             1
           </span>
           Press{" "}
-          <span className="font-semibold">Continue to place clip</span> above to
-          pick one moment (single short).
+          <span className="font-semibold">Continue to place clip</span> to pick
+          one moment (single short).
         </p>
       ) : null}
     </div>

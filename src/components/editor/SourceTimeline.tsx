@@ -142,18 +142,31 @@ export function SourceTimeline({
         </span>
       </div>
 
-      <div
-        ref={trackRef}
-        role="slider"
-        tabIndex={0}
-        aria-valuemin={0}
-        aria-valuemax={Math.max(0, durationMs - L)}
-        aria-valuenow={win.startMs}
-        aria-label="Locked clip window on full video"
-        className="relative h-12 cursor-pointer rounded-lg border border-zinc-700 bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-        onClick={onTrackClick}
-        onKeyDown={onKeyDown}
-      >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-zinc-700 text-sm font-medium text-zinc-100 hover:border-zinc-500"
+          aria-label="Nudge window earlier by 0.5 seconds"
+          onClick={() =>
+            onStartMsChange(
+              moveWindow(win.startMs, -500, L, durationMs).startMs,
+            )
+          }
+        >
+          −0.5s
+        </button>
+        <div
+          ref={trackRef}
+          role="slider"
+          tabIndex={0}
+          aria-valuemin={0}
+          aria-valuemax={Math.max(0, durationMs - L)}
+          aria-valuenow={win.startMs}
+          aria-label="Locked clip window on full video"
+          className="relative h-14 min-w-0 flex-1 cursor-pointer rounded-lg border border-zinc-700 bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 sm:h-12"
+          onClick={onTrackClick}
+          onKeyDown={onKeyDown}
+        >
         {ticks.map((t) => (
           <div
             key={t}
@@ -190,6 +203,19 @@ export function SourceTimeline({
         <span className="pointer-events-none absolute bottom-1 right-2 text-[10px] text-zinc-500">
           {formatMs(durationMs)}
         </span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-zinc-700 text-sm font-medium text-zinc-100 hover:border-zinc-500"
+          aria-label="Nudge window later by 0.5 seconds"
+          onClick={() =>
+            onStartMsChange(
+              moveWindow(win.startMs, 500, L, durationMs).startMs,
+            )
+          }
+        >
+          +0.5s
+        </button>
       </div>
 
       <div>

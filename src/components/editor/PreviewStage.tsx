@@ -291,7 +291,7 @@ export function PreviewStage({
   };
 
   return (
-    <div className="relative mx-auto w-full max-w-[360px] overflow-hidden rounded-2xl border border-zinc-800 bg-black shadow-2xl shadow-black/50">
+    <div className="relative mx-auto w-full max-w-full overflow-hidden rounded-2xl border border-zinc-800 bg-black shadow-2xl shadow-black/50 sm:max-w-sm md:max-w-md lg:max-w-[360px]">
       <video
         ref={mediaRef}
         src={videoUrl}
@@ -304,7 +304,7 @@ export function PreviewStage({
         ref={canvasRef}
         width={OUTPUT_WIDTH}
         height={OUTPUT_HEIGHT}
-        className={`h-auto w-full ${
+        className={`h-auto w-full max-h-[min(52dvh,calc(100vw*16/9))] object-contain lg:max-h-none ${
           selectedOverlayId
             ? "cursor-move"
             : onCropChange

@@ -33,16 +33,10 @@ import {
   saveAnalysisLocal,
   saveEditSpecLocal,
 } from "@/media/ingest/indexedDb";
-import { ingestReactionAsset } from "@/media/ingest/ingest";
 import { centerCrop9x16, layoutPanes } from "@/media/render/layoutMath";
 import { encodeEditSpec, EncodeError } from "@/media/render/encode";
 import { detectDeviceCapability } from "@/lib/deviceCapability";
-import {
-  OUTPUT_HEIGHT,
-  OUTPUT_WIDTH,
-  PIP_SIZE_MAX,
-  PIP_SIZE_MIN,
-} from "@/lib/constants";
+import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from "@/lib/constants";
 import { sliceWordsToClip } from "@/media/analysis/captions/groupCards";
 import { flagEmphasisWords } from "@/media/analysis/shortsBrain/sentiment";
 import type { CaptionStyleId, TimedWord } from "@/media/edit-spec/types";
@@ -59,6 +53,14 @@ import {
 import { normalizeEffects } from "@/media/edit-spec/normalizeEffects";
 import { resolveNextAction } from "./coach/nextAction";
 import { CoachCue, COACH_PULSE_CLASS } from "./coach/CoachCue";
+import { EncodeProgressOverlay } from "./EncodeProgressOverlay";
+import { MobileActionDock } from "./MobileActionDock";
+import {
+  PolishMobileTabs,
+  type PolishTabId,
+} from "./PolishMobileTabs";
+import { EditorAsideMore } from "./EditorAsideMore";
+import { useIsLg } from "@/lib/useMediaQuery";
 
 type Props = { projectId: string };
 
@@ -119,6 +121,10 @@ export function EditorStudio({ projectId }: Props) {
     null,
   );
   const [phaseMsg, setPhaseMsg] = useState("");
+  const [encodeProgress, setEncodeProgress] = useState<{
+    percent: number;
+    message: string;
+  } | null>(null);
   const [busy, setBusy] = useState<"analyze" | "encode" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [suggestError, setSuggestError] = useState<string | null>(null);
@@ -138,9 +144,11 @@ export function EditorStudio({ projectId }: Props) {
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [polishTab, setPolishTab] = useState<PolishTabId>("effects");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const capability = useMemo(() => detectDeviceCapability(), []);
+  const isLg = useIsLg();
 
   useEffect(() => {
     let revoked: string | null = null;
@@ -437,6 +445,7 @@ export function EditorStudio({ projectId }: Props) {
     setBusy("encode");
     setError(null);
     setDownloadUrl(null);
+    setEncodeProgress({ percent: 0, message: "Starting…" });
     try {
       const transcriptItems =
         analysis?.transcript?.words ??
@@ -455,8 +464,13 @@ export function EditorStudio({ projectId }: Props) {
           transcriptItems,
         },
         {
-          onProgress: (ev) =>
-            setPhaseMsg(`${ev.phase}: ${ev.message ?? ""} (${ev.percent}%)`),
+          onProgress: (ev: ProgressEvent) => {
+            setEncodeProgress({
+              percent: ev.percent,
+              message: ev.message?.trim() || ev.phase,
+            });
+            setPhaseMsg(`${ev.phase}: ${ev.message ?? ""} (${ev.percent}%)`);
+          },
         },
       );
       const url = URL.createObjectURL(result.blob);
@@ -482,6 +496,7 @@ export function EditorStudio({ projectId }: Props) {
     } finally {
       setBusy(null);
       setPhaseMsg("");
+      setEncodeProgress(null);
     }
   };
 
@@ -620,6 +635,11 @@ export function EditorStudio({ projectId }: Props) {
 
   return (
     <div className="space-y-6">
+      <EncodeProgressOverlay
+        open={busy === "encode"}
+        percent={encodeProgress?.percent ?? 0}
+        message={encodeProgress?.message ?? "Rendering…"}
+      />
       <EditorStepRail
         current={coachStep}
         maxReachable={reachable}
@@ -634,6 +654,7 @@ export function EditorStudio({ projectId }: Props) {
         continueLabel={continueLabel}
         onContinue={onContinue}
         hideContinue={coachStep === "render"}
+        continueInMobileDock
         onDismissCue={() =>
           setDismissedIds((prev) => new Set(prev).add(nextAction.id))
         }
@@ -711,6 +732,101 @@ export function EditorStudio({ projectId }: Props) {
                         }))
                 }
               />
+
+              {showAside && !isLg ? (
+                <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-3">
+                  <PolishMobileTabs
+                    value={polishTab}
+                    onChange={setPolishTab}
+                  />
+                  <div className="max-h-[40dvh] space-y-5 overflow-y-auto overscroll-contain">
+                    {polishTab === "effects" ? (
+                      <EffectsPanel
+                        spec={spec}
+                        analysis={analysis}
+                        sourceFile={sourceFile}
+                        durationMs={durationMs}
+                        targetLengthMs={lockedLength}
+                        selectedOverlayId={selectedOverlayId}
+                        onSelectOverlay={setSelectedOverlayId}
+                        onSilenceBusyChange={setSilenceBusy}
+                        emphasizeDetectSilence={
+                          nextAction.target === "effectsDetectSilence" &&
+                          nextAction.emphasize
+                        }
+                        onChange={(next) => {
+                          setPolishReadyForContinue(true);
+                          setHistory((h) => {
+                            if (!h) return h;
+                            const normalized = normalizeEffects(next);
+                            void persist(normalized);
+                            return pushSpec(h, normalized);
+                          });
+                        }}
+                      />
+                    ) : null}
+                    {polishTab === "captions" ? (
+                      <CaptionsPanel
+                        enabled={capOn}
+                        styleId={styleId}
+                        words={spec.captions?.words ?? []}
+                        onEnabledChange={(on) =>
+                          patch((s) => ({
+                            ...s,
+                            captions: {
+                              enabled: on,
+                              styleId:
+                                s.captions?.styleId ?? "bold-white-outline",
+                              words:
+                                s.captions?.words?.length
+                                  ? s.captions.words
+                                  : captionsForRange(
+                                      s.source.startMs,
+                                      s.source.endMs,
+                                    ),
+                            },
+                          }))
+                        }
+                        onStyleChange={(id) =>
+                          patch((s) => ({
+                            ...s,
+                            captions: {
+                              enabled: s.captions?.enabled ?? true,
+                              styleId: id,
+                              words: s.captions?.words ?? [],
+                            },
+                          }))
+                        }
+                        onWordsChange={(words) =>
+                          patch((s) => ({
+                            ...s,
+                            captions: {
+                              enabled: s.captions?.enabled ?? true,
+                              styleId:
+                                s.captions?.styleId ?? "bold-white-outline",
+                              words,
+                            },
+                          }))
+                        }
+                      />
+                    ) : null}
+                    {polishTab === "more" ? (
+                      <EditorAsideMore
+                        spec={spec}
+                        lengthLabel={lengthLabel}
+                        pip={pip}
+                        reactionFile={reactionFile}
+                        activeCandidate={activeCandidate}
+                        applyLockedWindow={applyLockedWindow}
+                        patch={patch}
+                        setReactionFile={setReactionFile}
+                        setError={setError}
+                        projectId={projectId}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               {showTimeline ? (
                 <SourceTimeline
@@ -814,7 +930,7 @@ export function EditorStudio({ projectId }: Props) {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm"
+                  className="min-h-11 rounded-lg border border-zinc-700 px-3 py-2 text-sm"
                   onClick={() => {
                     const v = videoRef.current;
                     if (!v) return;
@@ -843,7 +959,7 @@ export function EditorStudio({ projectId }: Props) {
                 <button
                   type="button"
                   disabled={!canUndo(history)}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm disabled:opacity-40"
+                  className="min-h-11 rounded-lg border border-zinc-700 px-3 py-2 text-sm disabled:opacity-40"
                   onClick={() => setHistory((h) => (h ? undo(h) : h))}
                 >
                   Undo
@@ -851,7 +967,7 @@ export function EditorStudio({ projectId }: Props) {
                 <button
                   type="button"
                   disabled={!canRedo(history)}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm disabled:opacity-40"
+                  className="min-h-11 rounded-lg border border-zinc-700 px-3 py-2 text-sm disabled:opacity-40"
                   onClick={() => setHistory((h) => (h ? redo(h) : h))}
                 >
                   Redo
@@ -862,7 +978,7 @@ export function EditorStudio({ projectId }: Props) {
                       type="button"
                       data-coach-target="renderMp4"
                       disabled={busy !== null || !placeConfirmed}
-                      className={`rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-zinc-950 disabled:opacity-40 ${
+                      className={`hidden min-h-11 rounded-lg bg-amber-400 px-3 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-40 lg:inline-flex lg:items-center ${
                         nextAction.target === "renderMp4" &&
                         nextAction.emphasize
                           ? COACH_PULSE_CLASS
@@ -887,7 +1003,7 @@ export function EditorStudio({ projectId }: Props) {
                         href={downloadUrl}
                         download
                         data-coach-target="download"
-                        className={`rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-200 ${
+                        className={`hidden min-h-11 items-center rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 lg:inline-flex ${
                           nextAction.target === "download" &&
                           nextAction.emphasize
                             ? COACH_PULSE_CLASS
@@ -942,7 +1058,9 @@ export function EditorStudio({ projectId }: Props) {
             </>
           ) : null}
 
-          {phaseMsg ? <p className="text-xs text-zinc-400">{phaseMsg}</p> : null}
+          {phaseMsg && busy !== "encode" ? (
+            <p className="text-xs text-zinc-400">{phaseMsg}</p>
+          ) : null}
           {error ? (
             <p className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
               {error}
@@ -950,7 +1068,7 @@ export function EditorStudio({ projectId }: Props) {
           ) : null}
         </div>
 
-        {showAside ? (
+        {showAside && isLg ? (
           <aside className="space-y-5 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
             <EffectsPanel
               spec={spec}
@@ -1015,247 +1133,56 @@ export function EditorStudio({ projectId }: Props) {
               }
             />
 
-            <section>
-              <h2 className="text-sm font-semibold text-zinc-100">
-                Window ({lengthLabel} locked)
-              </h2>
-              <label className="mt-2 block text-xs text-zinc-400">
-                Start (s)
-                <input
-                  type="number"
-                  step={0.1}
-                  className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
-                  value={(spec.source.startMs / 1000).toFixed(1)}
-                  onChange={(e) =>
-                    applyLockedWindow(Number(e.target.value) * 1000 || 0)
-                  }
-                />
-              </label>
-              <label className="mt-2 block text-xs text-zinc-400">
-                End (s) — derived
-                <input
-                  type="number"
-                  step={0.1}
-                  disabled
-                  className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-500"
-                  value={(spec.source.endMs / 1000).toFixed(1)}
-                />
-              </label>
-            </section>
-
-            <section>
-              <h2 className="text-sm font-semibold text-zinc-100">
-                Picture-in-picture
-              </h2>
-              <p className="mt-1 text-xs text-zinc-500">
-                Full-frame short. PiP corner only appears if you add a reaction.
-              </p>
-              {pip ? (
-                <>
-                  <label className="mt-2 block text-xs text-zinc-400">
-                    Anchor
-                    <select
-                      className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
-                      value={pip.anchor}
-                      onChange={(e) =>
-                        patch((s) => ({
-                          ...s,
-                          layout: {
-                            type: "pip",
-                            anchor: e.target.value as
-                              | "tl"
-                              | "tr"
-                              | "bl"
-                              | "br",
-                            sizePercent:
-                              s.layout.type === "pip"
-                                ? s.layout.sizePercent
-                                : 10,
-                            marginPx:
-                              s.layout.type === "pip" ? s.layout.marginPx : 24,
-                            fit: "cover",
-                          },
-                        }))
-                      }
-                    >
-                      <option value="tr">Top right</option>
-                      <option value="tl">Top left</option>
-                      <option value="br">Bottom right</option>
-                      <option value="bl">Bottom left</option>
-                    </select>
-                  </label>
-                  <label className="mt-2 block text-xs text-zinc-400">
-                    Size ({pip.sizePercent}%)
-                    <input
-                      type="range"
-                      min={PIP_SIZE_MIN}
-                      max={PIP_SIZE_MAX}
-                      value={pip.sizePercent}
-                      className="mt-1 w-full"
-                      onChange={(e) =>
-                        patch((s) => ({
-                          ...s,
-                          layout: {
-                            type: "pip",
-                            anchor:
-                              s.layout.type === "pip" ? s.layout.anchor : "tr",
-                            sizePercent: Number(e.target.value),
-                            marginPx:
-                              s.layout.type === "pip" ? s.layout.marginPx : 24,
-                            fit: "cover",
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                </>
-              ) : null}
-            </section>
-
-            <section className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3">
-              <h2 className="text-sm font-semibold text-zinc-50">
-                Add your reaction
-              </h2>
-              <p className="mt-1 text-xs text-zinc-300">
-                Upload your face cam or a still image — it shows as a PiP corner
-                on the short.
-              </p>
-              <label className="mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-amber-400/70 bg-zinc-950/60 px-4 py-6 text-center transition hover:border-amber-300 hover:bg-amber-400/5">
-                <span className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950">
-                  {reactionFile || spec.reaction?.kind !== "none"
-                    ? "Replace reaction file"
-                    : "Upload image or video"}
-                </span>
-                <span className="text-xs text-zinc-400">
-                  JPG, PNG, or MP4 · shown at {pip?.sizePercent ?? 18}% corner
-                </span>
-                <input
-                  type="file"
-                  accept="video/*,image/*"
-                  className="sr-only"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const media = await ingestReactionAsset(file, {
-                        projectId,
-                      });
-                      setReactionFile(file);
-                      patch((s) => ({
-                        ...s,
-                        reaction: {
-                          kind:
-                            media.kind === "reaction-image"
-                              ? "image"
-                              : "video",
-                          offsetMs: 0,
-                          audio: {
-                            sourceGain: 1,
-                            reactionGain: 0.8,
-                            ducking: true,
-                          },
-                        },
-                        layout: {
-                          type: "pip",
-                          anchor:
-                            s.layout.type === "pip" ? s.layout.anchor : "tr",
-                          sizePercent:
-                            s.layout.type === "pip"
-                              ? Math.max(s.layout.sizePercent, 18)
-                              : 18,
-                          marginPx:
-                            s.layout.type === "pip" ? s.layout.marginPx : 24,
-                          fit: "cover",
-                        },
-                      }));
-                    } catch (err) {
-                      setError(
-                        err instanceof Error
-                          ? err.message
-                          : "Reaction upload failed",
-                      );
-                    }
-                  }}
-                />
-              </label>
-              {reactionFile ? (
-                <p className="mt-2 truncate text-xs text-emerald-200">
-                  Loaded: {reactionFile.name}
-                </p>
-              ) : null}
-              {spec.reaction?.kind !== "none" ? (
-                <button
-                  type="button"
-                  className="mt-2 text-xs font-medium text-red-300 underline-offset-2 hover:underline"
-                  onClick={() => {
-                    setReactionFile(null);
-                    patch((s) => ({
-                      ...s,
-                      reaction: {
-                        kind: "none",
-                        offsetMs: 0,
-                        audio: {
-                          sourceGain: 1,
-                          reactionGain: 0.8,
-                          ducking: true,
-                        },
-                      },
-                    }));
-                  }}
-                >
-                  Remove reaction
-                </button>
-              ) : (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Without a reaction, export is full-frame source only.
-                </p>
-              )}
-            </section>
-
-            <section>
-              <h2 className="text-sm font-semibold text-zinc-100">Crop</h2>
-              {(["x", "y", "w", "h"] as const).map((key) => (
-                <label key={key} className="mt-2 block text-xs text-zinc-400">
-                  {key}
-                  <input
-                    type="number"
-                    step={0.01}
-                    min={0}
-                    max={1}
-                    className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
-                    value={spec.source.cropNorm[key]}
-                    onChange={(e) =>
-                      patch((s) => ({
-                        ...s,
-                        source: {
-                          ...s.source,
-                          cropNorm: {
-                            ...s.source.cropNorm,
-                            [key]: Number(e.target.value),
-                          },
-                        },
-                      }))
-                    }
-                  />
-                </label>
-              ))}
-            </section>
-
-            {activeCandidate ? (
-              <section className="text-xs text-zinc-400">
-                <h2 className="text-sm font-semibold text-zinc-100">
-                  Active moment
-                </h2>
-                <p className="mt-1 text-zinc-300">
-                  {(activeCandidate.startMs / 1000).toFixed(1)}s–
-                  {(activeCandidate.endMs / 1000).toFixed(1)}s
-                  {activeCandidate.title ? ` · ${activeCandidate.title}` : ""}
-                </p>
-              </section>
-            ) : null}
+            <EditorAsideMore
+              spec={spec}
+              lengthLabel={lengthLabel}
+              pip={pip}
+              reactionFile={reactionFile}
+              activeCandidate={activeCandidate}
+              applyLockedWindow={applyLockedWindow}
+              patch={patch}
+              setReactionFile={setReactionFile}
+              setError={setError}
+              projectId={projectId}
+            />
           </aside>
         ) : null}
       </div>
+
+      <MobileActionDock
+        mode={
+          coachStep === "render"
+            ? "render"
+            : coachStep === "length" ||
+                coachStep === "place" ||
+                coachStep === "polish"
+              ? "continue"
+              : "none"
+        }
+        continueLabel={continueLabel}
+        continueDisabled={continueDisabled || coachStep === "render"}
+        continueReason={continueReason}
+        pulseContinue={
+          nextAction.target === "continue" &&
+          nextAction.emphasize &&
+          !continueDisabled
+        }
+        onContinue={onContinue}
+        renderDisabled={busy !== null || !placeConfirmed}
+        pulseRender={
+          nextAction.target === "renderMp4" && nextAction.emphasize
+        }
+        rendering={busy === "encode"}
+        onRender={() => {
+          setCoachStep("render");
+          setError(null);
+          void runEncode();
+        }}
+        downloadUrl={downloadUrl}
+        pulseDownload={
+          nextAction.target === "download" && nextAction.emphasize
+        }
+      />
     </div>
   );
 }

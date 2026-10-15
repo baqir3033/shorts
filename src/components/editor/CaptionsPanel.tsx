@@ -61,9 +61,10 @@ export function CaptionsPanel({
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-zinc-100">Captions</h2>
-        <label className="flex items-center gap-2 text-xs text-zinc-300">
+        <label className="flex min-h-11 items-center gap-2 text-sm text-zinc-300">
           <input
             type="checkbox"
+            className="h-5 w-5"
             checked={enabled}
             onChange={(e) => onEnabledChange(e.target.checked)}
           />
@@ -84,7 +85,7 @@ export function CaptionsPanel({
                 key={s.id}
                 type="button"
                 title={s.hint}
-                className={`rounded-lg px-2.5 py-1.5 text-xs ${
+                className={`min-h-11 rounded-lg px-3 py-2 text-xs ${
                   styleId === s.id
                     ? "bg-amber-400 font-semibold text-zinc-950"
                     : "border border-zinc-700 text-zinc-200"
@@ -114,17 +115,17 @@ export function CaptionsPanel({
                       {(card.startMs / 1000).toFixed(1)}s–
                       {(card.endMs / 1000).toFixed(1)}s
                     </div>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                       {card.words.map((w, wi) => {
                         const gi = range.start + wi;
                         return (
                           <span
                             key={`${gi}-${w.startMs}`}
-                            className="inline-flex items-center gap-0.5"
+                            className="flex w-full items-center gap-2 sm:inline-flex sm:w-auto"
                           >
                             <input
                               value={w.text}
-                              className={`w-16 rounded border bg-zinc-950 px-1 py-0.5 text-zinc-100 ${
+                              className={`min-h-11 min-w-0 flex-1 rounded border bg-zinc-950 px-2 py-2 text-sm text-zinc-100 sm:w-24 sm:flex-none ${
                                 w.emphasis
                                   ? "border-amber-400/60"
                                   : "border-zinc-700"
@@ -135,8 +136,9 @@ export function CaptionsPanel({
                             />
                             <button
                               type="button"
-                              className="text-zinc-600 hover:text-red-300"
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-zinc-700 text-lg text-zinc-400 hover:border-red-400/50 hover:text-red-300"
                               title="Remove word"
+                              aria-label="Remove word"
                               onClick={() => removeWord(gi)}
                             >
                               ×
